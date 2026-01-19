@@ -1,0 +1,221 @@
+@import "tailwindcss";
+
+:root {
+  /* Common Tokens */
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --radius: 0.75rem;
+
+  /* Cyber Theme Tokens (Always Dark) */
+  --cyber-bg: #0F0F12;
+  --cyber-purple: #8B5CF6;
+  --cyber-blue: #06B6D4;
+  --cyber-teal: #14B8A6;
+  --cyber-green: #10B981;
+  --cyber-amber: #F59E0B;
+  --cyber-red: #EF4444;
+  --cyber-gray: #E5E7EB;
+  --cyber-card: rgba(18, 18, 20, 0.85);
+  --cyber-border: rgba(139, 92, 246, 0.2);
+  --cyber-glow: 0 0 40px rgba(139, 92, 246, 0.15);
+  --cyber-glow-elevated: 0 20px 60px rgba(139, 92, 246, 0.3);
+
+  /* UWorld Theme Tokens */
+  --uworld-navy: #004e92;
+  --uworld-navy-dark: #003366;
+  --uworld-accent: #ff7043;
+  --uworld-bg: #f8fafc;
+  --uworld-card: #ffffff;
+  --uworld-border: #e2e8f0;
+  --uworld-text: #1e293b;
+  --uworld-text-muted: #64748b;
+
+  /* Default (Light) Theme */
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --accent: #f1f5f9;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --border: #e2e8f0;
+}
+
+.dark {
+  --background: #0F0F12;
+  --foreground: #f8fafc;
+  --accent: #1e293b;
+  --card: #16161a;
+  --card-foreground: #f8fafc;
+  --border: #27272a;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-border: var(--border);
+
+  --font-sans: var(--font-inter);
+  --font-body: var(--font-inter);
+  --font-heading: var(--font-outfit);
+  --font-mono: var(--font-jetbrains);
+
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-error: #EF4444;
+  --color-primary-cyber: #8B5CF6;
+  --color-accent-cyber: #06B6D4;
+
+  --radius-xl: 1rem;
+  --radius-2xl: 1.5rem;
+}
+
+/* Base Transition */
+* {
+  transition-property: background-color, border-color, color, fill, stroke;
+  transition-duration: 300ms;
+}
+
+.cyber-theme {
+  background-color: var(--cyber-bg);
+  color: #ffffff;
+  min-height: 100vh;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  overflow-x: hidden;
+}
+
+.glass {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.dark .glass {
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.cyber-card {
+  background: var(--cyber-card);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--cyber-border);
+  border-radius: 24px;
+  box-shadow: var(--cyber-glow);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.cyber-card:hover {
+  transform: translateY(-6px) scale(1.02);
+  box-shadow: var(--cyber-glow-elevated);
+}
+
+.cyber-gradient-text {
+  background: linear-gradient(135deg, var(--cyber-purple), var(--cyber-blue));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.font-heading {
+  font-family: var(--font-heading);
+  font-weight: 500;
+}
+
+.font-body {
+  font-family: var(--font-body);
+  font-weight: 300;
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+.cyber-mesh {
+  background-image:
+    radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.15) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, rgba(6, 182, 212, 0.15) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, rgba(20, 184, 166, 0.1) 0px, transparent 50%),
+    radial-gradient(at 0% 100%, rgba(139, 92, 246, 0.1) 0px, transparent 50%);
+}
+
+.pulse-glow {
+  animation: pulse-glow 2s infinite;
+}
+
+@keyframes pulse-glow {
+  0% {
+    box-shadow: 0 0 5px rgba(139, 92, 246, 0.2);
+  }
+
+  50% {
+    box-shadow: 0 0 20px rgba(139, 92, 246, 0.5);
+  }
+
+  100% {
+    box-shadow: 0 0 5px rgba(139, 92, 246, 0.2);
+  }
+}
+
+.shimmer {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, #2563eb, #7c3aed);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* UWorld Specific Classes */
+.uworld-sidebar {
+  background-color: var(--uworld-navy);
+  color: white;
+}
+
+.uworld-active {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-left: 4px solid var(--uworld-accent);
+}
+
+.uworld-card {
+  background: white;
+  border: 1px solid var(--uworld-border);
+  border-radius: 4px;
+}
+
+.uworld-header {
+  background: white;
+  border-bottom: 2px solid var(--uworld-navy);
+}
