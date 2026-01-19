@@ -101,7 +101,7 @@ export default function ProductsPage() {
                   My Portal
                 </button>
               ) : (
-                <a href="/login" className="rounded-full bg-[#1d46af] px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-500/20 hover:bg-[#16368a] transition-all active:scale-95">
+                <a href="/auth" className="rounded-full bg-[#1d46af] px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-500/20 hover:bg-[#16368a] transition-all active:scale-95">
                   Sign In
                 </a>
               )}
@@ -186,13 +186,13 @@ export default function ProductsPage() {
             </p>
             <div className="flex flex-col gap-3">
               <button 
-                onClick={() => router.push('/signup?redirect=/checkout')}
+                onClick={() => router.push('/auth?redirect=/checkout')}
                 className="w-full py-4 bg-[#1d46af]/10 text-[#1d46af] border-2 border-[#1d46af]/30 text-sm font-black rounded-xl hover:bg-[#1d46af]/20 transition-all active:scale-95"
               >
                 SIGN UP NOW
               </button>
               <button 
-                onClick={() => router.push('/login?redirect=/checkout')}
+                onClick={() => router.push('/auth?redirect=/checkout')}
                 className="w-full py-4 bg-white text-slate-400 border-2 border-slate-100 text-sm font-black rounded-xl hover:bg-slate-50 transition-all active:scale-95"
               >
                 ALREADY HAVE AN ACCOUNT?

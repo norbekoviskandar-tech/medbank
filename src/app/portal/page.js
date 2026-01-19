@@ -74,7 +74,7 @@ export default function PortalPage() {
 
     const userId = localStorage.getItem("medbank_user");
     if (!userId) {
-      router.push("/login");
+      router.push("/auth");
       return;
     }
 

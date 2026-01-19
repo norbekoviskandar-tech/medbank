@@ -5,6 +5,6 @@ export function getCurrentUserId() {
 export function requireAuth(router) {
   const userId = getCurrentUserId();
   if (!userId) {
-    router.push("/login");
+    router.push("/auth");
   }
 }

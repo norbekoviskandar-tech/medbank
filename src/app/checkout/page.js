@@ -24,7 +24,7 @@ export default function CheckoutPage() {
   useEffect(() => {
     const userId = localStorage.getItem("medbank_user");
     if (!userId) {
-      router.push("/login?redirect=/checkout");
+      router.push("/auth?redirect=/checkout");
       return;
     }
 

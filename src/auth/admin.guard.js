@@ -3,7 +3,7 @@ import { getAllUsers } from "@/services/user.service";
 
 export async function requireAdmin(router) {
   const userId = getCurrentUserId();
-  if (!userId) return router.push("/login");
+  if (!userId) return router.push("/auth");
 
   const users = await getAllUsers();
   const user = users.find(u => u.id === userId);
