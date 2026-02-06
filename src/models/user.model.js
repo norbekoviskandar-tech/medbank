@@ -4,7 +4,7 @@ export function createUser({ id, name, email, passwordHash, role }) {
     name,
     email,
     passwordHash,
-    role, // "admin" | "student"
+    role, // "author" | "student"
     subscriptionStatus: "trial",
     purchased: false,
     createdAt: new Date().toISOString(),

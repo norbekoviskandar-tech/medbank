@@ -1,0 +1,170 @@
+[
+  {
+    "cid": 0,
+    "name": "testId",
+    "type": "TEXT",
+    "notnull": 0,
+    "dflt_value": null,
+    "pk": 1
+  },
+  {
+    "cid": 1,
+    "name": "testNumber",
+    "type": "INTEGER",
+    "notnull": 0,
+    "dflt_value": null,
+    "pk": 0
+  },
+  {
+    "cid": 2,
+    "name": "userId",
+    "type": "TEXT",
+    "notnull": 1,
+    "dflt_value": null,
+    "pk": 0
+  },
+  {
+    "cid": 3,
+    "name": "mode",
+    "type": "TEXT",
+    "notnull": 0,
+    "dflt_value": null,
+    "pk": 0
+  },
+  {
+    "cid": 4,
+    "name": "pool",
+    "type": "TEXT",
+    "notnull": 0,
+    "dflt_value": null,
+    "pk": 0
+  },
+  {
+    "cid": 5,
+    "name": "questions",
+    "type": "TEXT",
+    "notnull": 1,
+    "dflt_value": null,
+    "pk": 0
+  },
+  {
+    "cid": 6,
+    "name": "answers",
+    "type": "TEXT",
+    "notnull": 0,
+    "dflt_value": "'{}'",
+    "pk": 0
+  },
+  {
+    "cid": 7,
+    "name": "firstAnswers",
+    "type": "TEXT",
+    "notnull": 0,
+    "dflt_value": "'{}'",
+    "pk": 0
+  },
+  {
+    "cid": 8,
+    "name": "markedIds",
+    "type": "TEXT",
+    "notnull": 0,
+    "dflt_value": "'[]'",
+    "pk": 0
+  },
+  {
+    "cid": 9,
+    "name": "currentIndex",
+    "type": "INTEGER",
+    "notnull": 0,
+    "dflt_value": "0",
+    "pk": 0
+  },
+  {
+    "cid": 10,
+    "name": "elapsedTime",
+    "type": "INTEGER",
+    "notnull": 0,
+    "dflt_value": "0",
+    "pk": 0
+  },
+  {
+    "cid": 11,
+    "name": "isSuspended",
+    "type": "INTEGER",
+    "notnull": 0,
+    "dflt_value": "0",
+    "pk": 0
+  },
+  {
+    "cid": 12,
+    "name": "createdAt",
+    "type": "TEXT",
+    "notnull": 1,
+    "dflt_value": null,
+    "pk": 0
+  },
+  {
+    "cid": 13,
+    "name": "date",
+    "type": "TEXT",
+    "notnull": 1,
+    "dflt_value": null,
+    "pk": 0
+  },
+  {
+    "cid": 14,
+    "name": "productId",
+    "type": "TEXT",
+    "notnull": 0,
+    "dflt_value": "\"full-qbank\"",
+    "pk": 0
+  },
+  {
+    "cid": 15,
+    "name": "packageId",
+    "type": "TEXT",
+    "notnull": 0,
+    "dflt_value": null,
+    "pk": 0
+  },
+  {
+    "cid": 16,
+    "name": "packageName",
+    "type": "TEXT",
+    "notnull": 0,
+    "dflt_value": null,
+    "pk": 0
+  },
+  {
+    "cid": 17,
+    "name": "universeSize",
+    "type": "INTEGER",
+    "notnull": 0,
+    "dflt_value": null,
+    "pk": 0
+  },
+  {
+    "cid": 18,
+    "name": "eligiblePoolSize",
+    "type": "INTEGER",
+    "notnull": 0,
+    "dflt_value": null,
+    "pk": 0
+  },
+  {
+    "cid": 19,
+    "name": "poolLogic",
+    "type": "TEXT",
+    "notnull": 0,
+    "dflt_value": null,
+    "pk": 0
+  },
+  {
+    "cid": 20,
+    "name": "sessionState",
+    "type": "TEXT",
+    "notnull": 0,
+    "dflt_value": "'{}'",
+    "pk": 0
+  }
+]

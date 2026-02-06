@@ -24,5 +24,18 @@ export default class Question {
     this.published = data.published ?? false;
     this.stemImageMode = data.stemImageMode || "auto";
     this.explanationImageMode = data.explanationImageMode || "auto";
+
+    this.references = data.references || ""; // scientific citations
+    this.tags = data.tags || []; // array of strings
+
+    // Governance Fields
+    this.status = data.status || 'draft'; // draft, review, approved, published, archived, deprecated
+    this.versionNumber = data.versionNumber || 1;
+    this.isLatest = data.isLatest ?? 1;
+    this.conceptId = data.conceptId || null;
+    this.packageId = data.packageId || null;
+
+    // Version is a legacy field, versionNumber is the new standard
+    this.version = data.version || this.versionNumber;
   }
 }

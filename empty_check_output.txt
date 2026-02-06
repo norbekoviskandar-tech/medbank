@@ -1,0 +1,3 @@
+Total questions: 13
+Questions with NULL or empty productId: 0
+Questions with NULL or empty packageId: 0

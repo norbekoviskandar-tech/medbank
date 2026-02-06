@@ -1,0 +1,1 @@
+id, userId, questionId, status, isMarked, userAnswer, userHistory, packageId, firstResponse, firstIsCorrect, totalAttempts, updatedAt, timeSpent, lastUpdated, lastAnswer, lastSeenAt

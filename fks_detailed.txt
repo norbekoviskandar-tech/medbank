@@ -1,0 +1,29 @@
+user_questions
+  {"id":0,"seq":0,"table":"questions","from":"questionId","to":"id","on_update":"NO ACTION","on_delete":"NO ACTION","match":"NONE"}
+  {"id":1,"seq":0,"table":"users","from":"userId","to":"id","on_update":"NO ACTION","on_delete":"NO ACTION","match":"NONE"}
+tests
+  {"id":0,"seq":0,"table":"users","from":"userId","to":"id","on_update":"NO ACTION","on_delete":"NO ACTION","match":"NONE"}
+planner
+  {"id":0,"seq":0,"table":"users","from":"userId","to":"id","on_update":"NO ACTION","on_delete":"NO ACTION","match":"NONE"}
+user_products
+  {"id":0,"seq":0,"table":"products","from":"productId","to":"id","on_update":"NO ACTION","on_delete":"NO ACTION","match":"NONE"}
+  {"id":1,"seq":0,"table":"users","from":"userId","to":"id","on_update":"NO ACTION","on_delete":"NO ACTION","match":"NONE"}
+product_hierarchy
+  {"id":0,"seq":0,"table":"products","from":"productId","to":"id","on_update":"NO ACTION","on_delete":"NO ACTION","match":"NONE"}
+attempts
+  {"id":0,"seq":0,"table":"questions","from":"questionId","to":"id","on_update":"NO ACTION","on_delete":"NO ACTION","match":"NONE"}
+  {"id":1,"seq":0,"table":"users","from":"userId","to":"id","on_update":"NO ACTION","on_delete":"NO ACTION","match":"NONE"}
+question_behavior_stats
+  {"id":0,"seq":0,"table":"questions","from":"questionId","to":"id","on_update":"NO ACTION","on_delete":"NO ACTION","match":"NONE"}
+question_concepts
+  {"id":0,"seq":0,"table":"subscription_packages","from":"packageId","to":"id","on_update":"NO ACTION","on_delete":"NO ACTION","match":"NONE"}
+governance_history
+  {"id":0,"seq":0,"table":"question_concepts","from":"conceptId","to":"id","on_update":"NO ACTION","on_delete":"NO ACTION","match":"NONE"}
+  {"id":1,"seq":0,"table":"questions","from":"versionId","to":"id","on_update":"NO ACTION","on_delete":"NO ACTION","match":"NONE"}
+student_cognition_profiles
+  {"id":0,"seq":0,"table":"users","from":"userId","to":"id","on_update":"NO ACTION","on_delete":"NO ACTION","match":"NONE"}
+calibrated_item_intelligence
+  {"id":0,"seq":0,"table":"questions","from":"questionId","to":"id","on_update":"NO ACTION","on_delete":"NO ACTION","match":"NONE"}
+student_answers
+  {"id":0,"seq":0,"table":"tests","from":"testId","to":"testId","on_update":"NO ACTION","on_delete":"NO ACTION","match":"NONE"}
+  {"id":1,"seq":0,"table":"users","from":"studentId","to":"id","on_update":"NO ACTION","on_delete":"NO ACTION","match":"NONE"}

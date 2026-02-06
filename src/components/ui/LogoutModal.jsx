@@ -19,7 +19,7 @@ export default function LogoutModal({ isOpen, onClose, onConfirm }) {
             initial={{ scale: 0.95, opacity: 0, y: 10 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.95, opacity: 0, y: 10 }}
-            className="relative w-full max-w-sm bg-white rounded-3xl shadow-2xl p-8 overflow-hidden border border-white/20"
+            className="relative w-full max-w-sm bg-card rounded-3xl shadow-2xl p-8 overflow-hidden border border-border"
           >
              {/* Decorative background blur */}
              <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-red-50/50 to-transparent pointer-events-none" />
