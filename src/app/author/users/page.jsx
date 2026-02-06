@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getAllUsers, updateUserSubscription, getStudentProgress, deleteUser, banUser } from "@/services/user.service";
+import { getAllUsers, updateUserSubscription, getStudentProgress, banUser } from "@/services/user.service";
+import { useDeleteItem } from "@/hooks/useDeleteItem";
 import UserProfileModal from "@/components/author/UserProfileModal";
 import { Search, Filter, MessageSquare, Shield, Clock, BookOpen, ChevronRight, User } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -22,6 +23,13 @@ export default function ManageUsersPage() {
     const [selectedUser, setSelectedUser] = useState(null);
     const [selectedIds, setSelectedIds] = useState(new Set());
     const [isBulkLoading, setIsBulkLoading] = useState(false);
+
+    // Delete hook
+    const { handleBulkDelete: bulkDeleteUsers, isDeleting } = useDeleteItem(
+        'user',
+        setUsers,
+        setSelectedIds
+    );
 
     // Auth check
     useEffect(() => {
@@ -100,21 +108,14 @@ export default function ManageUsersPage() {
     };
 
     const handleBulkDelete = async () => {
-        if (!confirm(`CRITICAL: Are you sure you want to PERMANENTLY DELETE ${selectedIds.size} accounts? This action will PURGE ALL DATA and cannot be undone.`)) return;
+        const ids = Array.from(selectedIds);
         setIsBulkLoading(true);
-        let successCount = 0;
+        
         try {
-            for (const id of Array.from(selectedIds)) {
-                await deleteUser(id);
-                successCount++;
-            }
-            alert(`Purge Complete: ${successCount} identities erased from master registry.`);
-            setSelectedIds(new Set());
-            loadUsers();
-        } catch (err) {
-            console.error(err);
-            alert(`Registry Error: Purged ${successCount} entries before failing. Contact system architect.`);
-            loadUsers();
+            await bulkDeleteUsers(ids, {
+                confirmMessage: `CRITICAL: Are you sure you want to PERMANENTLY DELETE ${ids.length} accounts? This action will PURGE ALL DATA and cannot be undone.`,
+                successMessage: `Purge Complete: ${ids.length} identities erased from master registry.`
+            });
         } finally {
             setIsBulkLoading(false);
         }

@@ -2,8 +2,9 @@
 
 import { useEffect, useState, useRef, useContext } from "react";
 import { useRouter } from "next/navigation";
-import { getAllQuestions, deleteQuestion, updateQuestion, addQuestion, getQuestionById, submitForReview, approveQuestion, publishQuestion, deprecateQuestion, reviseQuestion } from "@/services/question.service";
+import { getAllQuestions, updateQuestion, addQuestion, getQuestionById, submitForReview, approveQuestion, publishQuestion, deprecateQuestion, reviseQuestion } from "@/services/question.service";
 import { getAllProducts, getProductById } from "@/services/product.service";
+import { useDeleteItem } from "@/hooks/useDeleteItem";
 import { ChevronDown, Search, Filter, Database, ArrowUpDown, LayoutGrid, CheckCircle2, Clock, AlertTriangle, Archive, FileEdit, History } from "lucide-react";
 import GovernanceTimeline from "@/components/author/question/GovernanceTimeline";
 import { AppContext } from "@/context/AppContext";
@@ -29,6 +30,13 @@ export default function ManageQuestionsPage() {
   const [filterStem, setFilterStem] = useState("");
   const [sortBy, setSortBy] = useState("newest");
   const [selectedIds, setSelectedIds] = useState(new Set());
+
+  // Delete hook
+  const { handleDelete: deleteQuestion, handleBulkDelete: bulkDeleteQuestions, isDeleting } = useDeleteItem(
+    'question',
+    setQuestions,
+    setSelectedIds
+  );
 
   const [packageFilter, setPackageFilter] = useState("");
   const [packageName, setPackageName] = useState("");
@@ -190,14 +198,7 @@ export default function ManageQuestionsPage() {
 
   // Delete with confirmation
   const handleDelete = async (id) => {
-    if (!confirm("Delete this question permanently? This cannot be undone.")) return;
-    try {
-      await deleteQuestion(id);
-      setQuestions(prev => prev.filter(q => q.id !== id));
-    } catch (err) {
-      console.error(err);
-      alert("Failed to delete question");
-    }
+    await deleteQuestion(id);
   };
 
   // Selection logic
@@ -251,18 +252,10 @@ export default function ManageQuestionsPage() {
 
   const bulkDelete = async () => {
     const ids = Array.from(selectedIds);
-    if (!ids.length) return alert("Please select questions first");
-    if (!confirm(`Permanently delete ${ids.length} selected question(s)? This cannot be undone.`)) return;
-
+    
     try {
       setIsLoading(true);
-      await Promise.all(ids.map(id => deleteQuestion(id)));
-      setSelectedIds(new Set());
-      await loadQuestions();
-      alert(`Deleted ${ids.length} questions`);
-    } catch (err) {
-      alert("Bulk delete failed");
-      console.error(err);
+      await bulkDeleteQuestions(ids);
     } finally {
       setIsLoading(false);
     }

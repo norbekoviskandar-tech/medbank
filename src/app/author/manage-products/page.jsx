@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useContext } from "react";
 import { useRouter } from "next/navigation";
-import { getAllProducts, addProduct, updateProduct, deleteProduct } from "@/services/product.service";
+import { getAllProducts, addProduct, updateProduct } from "@/services/product.service";
+import { useDeleteItem } from "@/hooks/useDeleteItem";
 import { Package, Plus, Trash2, ShieldCheck, ShieldAlert, Edit2, Check, X, Tag, Clock, DollarSign, Database } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { AppContext } from "@/context/AppContext";
@@ -15,6 +16,29 @@ export default function ManageProductsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Selection state
+  const [selectedIds, setSelectedIds] = useState(new Set());
+
+  // Delete hook
+  const { handleDelete: deleteProduct, isDeleting, error: deleteError, clearError } = useDeleteItem(
+    'product', 
+    setProducts, 
+    setSelectedIds
+  );
+
+  const ECG_SYSTEMS = ["Cardiology – ECG"];
+  const ECG_SUBJECTS = [
+    "Fundamentals & Chamber Enlargement",
+    "Intraventricular Conduction Disturbances",
+    "Myocardial Ischaemia & Stress Testing",
+    "Supraventricular Arrhythmias",
+    "Ventricular Arrhythmias & Tachycardias",
+    "AV Blocks & Preexcitation",
+    "Systemic, Drug, & Electrolyte Effects",
+    "Technical Methods & Pacemakers",
+    "Paediatric & Congenital ECG"
+  ];
+
   // Form state
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -23,6 +47,9 @@ export default function ManageProductsPage() {
     duration_days: "",
     price: "",
     description: "",
+    templateType: "DEFAULT",
+    systems: [],
+    subjects: [],
     is_published: true,
     plans: [], // Array of {days, price}
     defaultCreateTestConfig: {
@@ -32,9 +59,6 @@ export default function ManageProductsPage() {
       negativeMarking: false
     }
   });
-
-  // Selection state
-  const [selectedIds, setSelectedIds] = useState(new Set());
 
   // Auth check
   useEffect(() => {
@@ -89,6 +113,9 @@ export default function ManageProductsPage() {
       duration_days: "",
       price: "",
       description: "",
+      templateType: "DEFAULT",
+      systems: [],
+      subjects: [],
       is_published: true,
       plans: [],
       defaultCreateTestConfig: {
@@ -110,8 +137,15 @@ export default function ManageProductsPage() {
         .map(p => ({ days: parseInt(p.days), price: parseFloat(p.price) }))
         .filter(p => !isNaN(p.days) && !isNaN(p.price));
 
+      const effectiveTemplateType = formData.templateType || 'DEFAULT';
+      const effectiveSystems = effectiveTemplateType === 'ECG' ? ECG_SYSTEMS : (formData.systems || []);
+      const effectiveSubjects = effectiveTemplateType === 'ECG' ? ECG_SUBJECTS : (formData.subjects || []);
+
       const newProduct = await addProduct({
         ...formData,
+        templateType: effectiveTemplateType,
+        systems: effectiveSystems,
+        subjects: effectiveSubjects,
         duration_days: parseInt(formData.duration_days) || 0,
         price: parseFloat(formData.price) || 0,
         plans: cleanedPlans
@@ -137,9 +171,16 @@ export default function ManageProductsPage() {
         .map(p => ({ days: parseInt(p.days), price: parseFloat(p.price) }))
         .filter(p => !isNaN(p.days) && !isNaN(p.price));
 
+      const effectiveTemplateType = formData.templateType || 'DEFAULT';
+      const effectiveSystems = effectiveTemplateType === 'ECG' ? ECG_SYSTEMS : (formData.systems || []);
+      const effectiveSubjects = effectiveTemplateType === 'ECG' ? ECG_SUBJECTS : (formData.subjects || []);
+
       await updateProduct({
         ...formData,
         id: editingId,
+        templateType: effectiveTemplateType,
+        systems: effectiveSystems,
+        subjects: effectiveSubjects,
         duration_days: parseInt(formData.duration_days) || 0,
         price: parseFloat(formData.price) || 0,
         plans: cleanedPlans
@@ -157,6 +198,9 @@ export default function ManageProductsPage() {
       duration_days: product.duration_days?.toString() || "",
       price: product.price?.toString() || "",
       description: product.description || "",
+      templateType: product.templateType || 'DEFAULT',
+      systems: Array.isArray(product.systems) ? product.systems : [],
+      subjects: Array.isArray(product.subjects) ? product.subjects : [],
       is_published: product.is_published,
       plans: product.plans || [],
       defaultCreateTestConfig: product.defaultCreateTestConfig || {
@@ -171,13 +215,15 @@ export default function ManageProductsPage() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm("Are you sure you want to delete this product? This will fail if users have active subscriptions based on this duration.")) return;
-    try {
-      await deleteProduct(id);
-      loadProducts();
-    } catch (err) {
-      alert(err.message);
-    }
+    await deleteProduct(id, {
+      onSuccess: () => {
+        // Clear editing if deleted item was being edited
+        if (editingId === id) {
+          setEditingId(null);
+          setShowCreateForm(false);
+        }
+      }
+    });
   };
 
   const toggleSelect = (id) => {
@@ -296,6 +342,54 @@ export default function ManageProductsPage() {
                     placeholder="Brief highlight of features..."
                     className="bg-background border border-border px-4 py-3 rounded-2xl w-full text-foreground focus:ring-2 focus:ring-primary/20 outline-none transition-all font-medium"
                   />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Template Type</label>
+                  <select
+                    value={formData.templateType || 'DEFAULT'}
+                    onChange={e => {
+                      const nextType = e.target.value;
+                      if (nextType === 'ECG') {
+                        setFormData({ ...formData, templateType: nextType, systems: ECG_SYSTEMS, subjects: ECG_SUBJECTS });
+                      } else {
+                        setFormData({ ...formData, templateType: nextType });
+                      }
+                    }}
+                    className="bg-background border border-border px-4 py-3 rounded-2xl w-full text-foreground focus:ring-2 focus:ring-primary/20 outline-none transition-all font-medium"
+                  >
+                    <option value="DEFAULT">DEFAULT</option>
+                    <option value="ECG">ECG</option>
+                  </select>
+                </div>
+
+                <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Systems</label>
+                    <textarea
+                      value={(formData.templateType === 'ECG' ? ECG_SYSTEMS : (formData.systems || [])).join('\n')}
+                      readOnly={formData.templateType === 'ECG'}
+                      onChange={e => {
+                        if (formData.templateType === 'ECG') return;
+                        const next = e.target.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+                        setFormData({ ...formData, systems: next });
+                      }}
+                      className="bg-background border border-border px-4 py-3 rounded-2xl w-full text-foreground focus:ring-2 focus:ring-primary/20 outline-none transition-all font-medium h-28"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Subjects</label>
+                    <textarea
+                      value={(formData.templateType === 'ECG' ? ECG_SUBJECTS : (formData.subjects || [])).join('\n')}
+                      readOnly={formData.templateType === 'ECG'}
+                      onChange={e => {
+                        if (formData.templateType === 'ECG') return;
+                        const next = e.target.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+                        setFormData({ ...formData, subjects: next });
+                      }}
+                      className="bg-background border border-border px-4 py-3 rounded-2xl w-full text-foreground focus:ring-2 focus:ring-primary/20 outline-none transition-all font-medium h-28"
+                    />
+                  </div>
                 </div>
                 <div className="lg:col-span-3 h-[1px] bg-slate-100 my-2" />
 
