@@ -26,6 +26,9 @@ export function getDb() {
     console.log('DB: Opening database at:', DB_PATH);
     db = new Database(DB_PATH);
     db.pragma('journal_mode = WAL');
+    db.pragma('synchronous = NORMAL');
+    db.pragma('cache_size = 1000000');
+    db.pragma('busy_timeout = 5000');
     db.pragma('foreign_keys = ON');
     initializeSchema();
     seedDemoUsers();
@@ -628,7 +631,8 @@ function initializeSchema() {
   // Add isDeleted column for soft delete functionality
   const productColsToAdd = [
     { name: 'isDeleted', type: 'INTEGER DEFAULT 0' },
-    { name: 'deletedAt', type: 'TEXT' }
+    { name: 'deletedAt', type: 'TEXT' },
+    { name: 'templateType', type: "TEXT DEFAULT 'DEFAULT'" }
   ];
   const existingProductCols = database.prepare("PRAGMA table_info(products)").all().map(c => c.name);
   for (const col of productColsToAdd) {
@@ -1075,7 +1079,20 @@ export function getUserQuestions(userId, productId) {
 
         // Correct/Incorrect/Omitted are computed per attempt snapshot
         if (userAnswer === null || userAnswer === undefined || userAnswer === '') {
-          computedStatus = 'omitted';
+          // Only mark as omitted if the question was previously unused
+          const existingUserQuestion = db.prepare(
+            'SELECT status FROM user_questions WHERE userId = ? AND questionId = ? AND (productId = ? OR packageId = ?)'
+          ).get(String(userId), String(q.id), String(productId), String(productId));
+          
+          if (existingUserQuestion && existingUserQuestion.status === 'unused') {
+            computedStatus = 'omitted';
+          } else if (existingUserQuestion) {
+            // Keep the previous status (correct/incorrect) for questions from those pools
+            computedStatus = existingUserQuestion.status;
+          } else {
+            // New question, mark as omitted
+            computedStatus = 'omitted';
+          }
         } else {
           computedStatus = Number(latest.isCorrect) === 1 ? 'correct' : 'incorrect';
         }
@@ -1168,6 +1185,13 @@ export function updateUserQuestion({
 
   const finalMarked = toggleFlag ? (existing.isMarked ? 0 : 1) : existing.isMarked;
   
+  // Only allow status to become 'omitted' if it was previously 'unused'
+  let finalStatus = newStatus;
+  if (newStatus === 'omitted' && existing.status && existing.status !== 'unused') {
+    // Keep the original status (correct/incorrect) if not unused
+    finalStatus = existing.status;
+  }
+  
   db.prepare(`
     UPDATE user_questions SET
       status = COALESCE(?, status),
@@ -1181,7 +1205,7 @@ export function updateUserQuestion({
       lastUpdated = ?
     WHERE userId = ? AND questionId = ? AND (productId = ? OR packageId = ?)
   `).run(
-    newStatus, 
+    finalStatus, 
     finalMarked, 
     selectedAnswer,
     selectedAnswer,
@@ -1341,7 +1365,7 @@ export function saveTest(test) {
 
   console.log(`[Exam Runtime] Saving test ${tidStr} for user ${uidStr} in product ${pidStr}`);
 
-  const existing = db.prepare('SELECT * FROM tests WHERE testId = ?').get(tidStr);
+  const existing = db.prepare('SELECT * FROM tests WHERE testId = ? AND userId = ?').get(tidStr, uidStr);
   
   if (existing) {
     db.prepare(`
@@ -1351,7 +1375,7 @@ export function saveTest(test) {
         packageId = ?, packageName = ?, productId = ?,
         universeSize = ?, eligiblePoolSize = ?, poolLogic = ?,
         sessionState = ?
-      WHERE testId = ?
+      WHERE testId = ? AND userId = ?
     `).run(
       JSON.stringify(test.questions),
       JSON.stringify(test.answers || {}),
@@ -1368,7 +1392,8 @@ export function saveTest(test) {
       test.eligiblePoolSize || existing.eligiblePoolSize,
       JSON.stringify(test.poolLogic || {}),
       JSON.stringify(test.sessionState || {}),
-      tidStr
+      tidStr,
+      uidStr
     );
   } else {
     db.prepare(`
@@ -1581,11 +1606,67 @@ export function finishAttempt(attemptId) {
   if (!existing) throw new Error('Attempt not found');
   if (existing.finishedAt) return { success: true, alreadyFinished: true };
 
+  // Mark the attempt as finished
   db.prepare(`
     UPDATE test_attempts 
     SET finishedAt = ?
     WHERE id = ?
   `).run(new Date().toISOString(), attemptId);
+
+  // Get the attempt details to update user_questions
+  const attempt = db.prepare(`
+    SELECT ta.*, t.userId, t.packageId, t.productId 
+    FROM test_attempts ta
+    JOIN tests t ON ta.testId = t.testId
+    WHERE ta.id = ?
+  `).get(attemptId);
+
+  if (attempt) {
+    // Get all answers for this attempt
+    const answers = db.prepare('SELECT * FROM test_answers WHERE testAttemptId = ?').all(attemptId);
+    
+    answers.forEach(answer => {
+      const userId = attempt.userId;
+      const productId = attempt.productId || attempt.packageId;
+      
+      // Get the current status of this question in user_questions
+      const currentStatus = db.prepare(
+        'SELECT status FROM user_questions WHERE userId = ? AND questionId = ? AND (productId = ? OR packageId = ?)'
+      ).get(String(userId), String(answer.questionId), String(productId), String(productId))?.status || 'unused';
+      
+      // Determine the new status
+      let newStatus;
+      if (answer.selectedOption === null || answer.selectedOption === undefined || answer.selectedOption === '') {
+        // Only mark as omitted if it was previously unused
+        if (currentStatus === 'unused') {
+          newStatus = 'omitted';
+        } else {
+          // Keep the previous status for questions from correct/incorrect pools
+          newStatus = currentStatus;
+        }
+      } else {
+        // Question was answered, update based on correctness
+        newStatus = answer.isCorrect ? 'correct' : 'incorrect';
+      }
+      
+      // Update user_questions with the new status
+      db.prepare(`
+        INSERT OR REPLACE INTO user_questions 
+        (userId, questionId, productId, packageId, status, userAnswer, totalAttempts, lastSeenAt, updatedAt, lastUpdated)
+        VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+      `).run(
+        String(userId),
+        String(answer.questionId),
+        String(productId),
+        String(productId),
+        newStatus,
+        answer.selectedOption,
+        new Date().toISOString(),
+        new Date().toISOString(),
+        new Date().toISOString()
+      );
+    });
+  }
 
   return { success: true, alreadyFinished: false };
 }
@@ -2191,13 +2272,14 @@ export function getProductByIdIncludeDeleted(id) {
 
 export function createProduct(product) {
   const db = getDb();
-  const stmt = db.prepare('INSERT INTO products (name, slug, duration_days, price, description, systems, subjects, plans, createdAt, isActive) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+  const stmt = db.prepare('INSERT INTO products (name, slug, duration_days, price, description, templateType, systems, subjects, plans, createdAt, isActive) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
   const info = stmt.run(
     product.name, 
     product.slug || product.name.toLowerCase().replace(/\s+/g, '-'),
     product.duration_days || 0, 
     product.price || 0, 
     product.description || '', 
+    product.templateType || 'DEFAULT',
     JSON.stringify(product.systems || []),
     JSON.stringify(product.subjects || []),
     JSON.stringify(product.plans || []),
@@ -2211,7 +2293,7 @@ export function updateProduct(product) {
   const db = getDb();
   const stmt = db.prepare(`
     UPDATE products SET
-      name = ?, duration_days = ?, price = ?, description = ?, isActive = ?, systems = ?, subjects = ?, plans = ?, updatedAt = ?
+      name = ?, duration_days = ?, price = ?, description = ?, isActive = ?, templateType = ?, systems = ?, subjects = ?, plans = ?, updatedAt = ?
     WHERE id = ?
   `);
   stmt.run(
@@ -2220,6 +2302,7 @@ export function updateProduct(product) {
     product.price || 0, 
     product.description, 
     product.isActive ? 1 : 0, 
+    product.templateType || 'DEFAULT',
     JSON.stringify(product.systems || []),
     JSON.stringify(product.subjects || []),
     JSON.stringify(product.plans || []),
@@ -2598,6 +2681,7 @@ function mapProductRow(p) {
     ...p,
     isActive: !!p.isActive,
     is_published: !!(p.isActive || p.is_published),
+    templateType: p.templateType || 'DEFAULT',
     systems: safeParse(p.systems, []),
     subjects: safeParse(p.subjects, []),
     plans: safeParse(p.plans, []),

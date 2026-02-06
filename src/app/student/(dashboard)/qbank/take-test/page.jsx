@@ -1,5 +1,8 @@
 "use client";
 
+import dynamic from "next/dynamic";
+import Image from "next/image";
+
 import { useEffect, useState, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { getAllQuestions } from "@/services/question.service";
@@ -36,6 +39,35 @@ export default function TakeTestPage() {
   const router = useRouter();
   const handleEndBlockRef = useRef(null);
 
+  // Auto-save answers and flags to localStorage
+  const saveToLocalStorage = (updates) => {
+    const testData = JSON.parse(localStorage.getItem("medbank_current_test") || "{}");
+    const updated = { ...testData, ...updates };
+    localStorage.setItem("medbank_current_test", JSON.stringify(updated));
+  };
+
+  // Auto-save currentIndex and elapsedTime to localStorage
+  useEffect(() => {
+    saveToLocalStorage({ currentIndex, elapsedTime });
+  }, [currentIndex, elapsedTime]);
+
+  // Load saved state from localStorage on mount
+  const loadSavedState = () => {
+    const saved = localStorage.getItem("medbank_current_test");
+    if (!saved) return {};
+    try {
+      const parsed = JSON.parse(saved);
+      return {
+        answers: parsed.answers || {},
+        markedIds: parsed.markedIds || [],
+        elapsedTime: parsed.elapsedTime || 0,
+        currentIndex: parsed.currentIndex || 0
+      };
+    } catch {
+      return {};
+    }
+  };
+
   // Load test configuration
   useEffect(() => {
     const testData = JSON.parse(localStorage.getItem("medbank_current_test"));
@@ -49,6 +81,9 @@ export default function TakeTestPage() {
     setIsReviewMode(!!testData.isReview);
     // NEW: Capture attempt ID
     setTestAttemptId(testData.testAttemptId);
+    
+    // Load saved state from localStorage for resume
+    const savedState = loadSavedState();
     
     async function fetchQuestions() {
       const effectivePackageId = String(testData.packageId || localStorage.getItem("medbank_selected_package"));
@@ -161,10 +196,10 @@ export default function TakeTestPage() {
         }
       }
 
-      const savedMarked = testData.markedIds ?? testData.resumeData?.markedIds ?? [];
+      const savedMarked = testData.markedIds ?? testData.resumeData?.markedIds ?? savedState.markedIds ?? [];
 
       if (!usingAttemptSnapshot) {
-        setAnswers(sourceAnswers);
+        setAnswers({ ...sourceAnswers, ...savedState.answers });
       }
 
       // Lock answers based on mode and session state
@@ -191,8 +226,8 @@ export default function TakeTestPage() {
         }
       }
 
-      setCurrentIndex(targetIndex);
-      setElapsedTime(savedTime);
+      setCurrentIndex(savedState.currentIndex || targetIndex);
+      setElapsedTime(savedState.elapsedTime || savedTime);
       setMarkedQuestions(new Set(savedMarked));
 
       // Safety Check: Ensure this test belongs to the current user
@@ -420,6 +455,8 @@ export default function TakeTestPage() {
 
       setSelectedAnswer(null);
       setAnswers(nextAnswers);
+      // Auto-save to localStorage
+      saveToLocalStorage({ answers: nextAnswers });
       return;
     }
 
@@ -434,6 +471,8 @@ export default function TakeTestPage() {
     }
 
     setAnswers(nextAnswers);
+    // Auto-save to localStorage
+    saveToLocalStorage({ answers: nextAnswers });
   };
 
   const toggleStrikeout = async (letter) => {
@@ -519,41 +558,37 @@ export default function TakeTestPage() {
     const newMarked = new Set(markedQuestions);
     const isNowMarked = !newMarked.has(q.id);
 
-    // Flagged is an overlay state, and per-attempt only.
-    if (isReviewMode) {
-      return;
+    // Allow flag/unflag during review as well
+    if (!isReviewMode) {
+      // Atomic attempt update + localStorage sync (together)
+      const currentTestData = JSON.parse(localStorage.getItem("medbank_current_test") || "{}");
+      const attemptId = currentTestData.testAttemptId || testAttemptId;
+      if (!attemptId) {
+        console.error('[Exam Runtime] No attemptId for flag update');
+        return;
+      }
+
+      const ok = await updateAttemptFlag(attemptId, q.id, isNowMarked);
+      if (!ok) {
+        console.error('[Exam Runtime] Failed to persist attempt flag to DB', { attemptId, questionId: q.id });
+        return;
+      }
     }
 
-    // Atomic attempt update + localStorage sync (together)
-    const currentTestData = JSON.parse(localStorage.getItem("medbank_current_test") || "{}");
-    const attemptId = await ensureAttemptId();
-    if (!attemptId) {
-      console.error('[Exam Runtime] No testAttemptId found for attempt-scoped flag write.');
-      return;
-    }
-
-    const ok = await updateAttemptFlag(attemptId, q.id, isNowMarked);
-    if (!ok) {
-      console.error('[Exam Runtime] Failed to persist attempt flag to DB', { attemptId, questionId: q.id });
-      return;
-    }
-
-    // DB write succeeded; update React state + localStorage together
+    // Update React state + localStorage together
     if (newMarked.has(q.id)) newMarked.delete(q.id);
     else newMarked.add(q.id);
     setMarkedQuestions(newMarked);
+    // Auto-save to localStorage
+    saveToLocalStorage({ markedIds: Array.from(newMarked) });
 
     try {
-      
-      // Keep local session storage in sync for UI state retention
-      const updatedLocal = {
-        ...currentTestData,
-        markedIds: Array.from(newMarked)
-      };
-      localStorage.setItem("medbank_current_test", JSON.stringify(updatedLocal));
-      
+      // Optional: Dispatch progress refresh for UI sync
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event("medbank_progress_refresh"));
+      }
     } catch (err) {
-      console.error("Failed to sync flag status:", err);
+      console.warn('[Exam Runtime] Failed to dispatch progress refresh:', err);
     }
   };
 
@@ -700,6 +735,9 @@ export default function TakeTestPage() {
 
       localStorage.setItem("medbank_last_test_id", activeTestId);
       localStorage.removeItem("medbank_current_test");
+      
+      // Clear the testId from sessionStorage since test is completed
+      sessionStorage.removeItem('current_test_id');
       
       // Dispatch refresh event
       if (typeof window !== 'undefined') {
@@ -868,7 +906,7 @@ export default function TakeTestPage() {
               {q.stem}
               {q.stemImage?.data && (
                 <div className="mt-8 flex justify-center">
-                  <img src={q.stemImage.data} alt="stem" className="max-w-full rounded border-2 border-zinc-100 shadow-sm" />
+                  <Image src={q.stemImage.data} alt="stem" width={400} height={300} loading="lazy" className="max-w-full rounded border-2 border-zinc-100 shadow-sm" />
                 </div>
               )}
             </div>
@@ -952,7 +990,7 @@ export default function TakeTestPage() {
                           )}
                         </span>
                         {choice.image?.data && (
-                          <img src={choice.image.data} alt={`choice-${letter}`} className="max-w-xs rounded border mt-2" />
+                          <Image src={choice.image.data} alt={`choice-${letter}`} width={400} height={300} loading="lazy" className="max-w-xs rounded border mt-2" />
                         )}
                       </div>
                     </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useEffect, useState } from "react";
+import { createContext, useEffect, useState, useMemo } from "react";
 
 export const AppContext = createContext();
 
@@ -144,15 +144,24 @@ export default function AppProvider({ children }) {
     }
   };
 
+  const value = useMemo(() => ({ 
+    theme, toggleTheme, 
+    sidebarCollapsed, setSidebarCollapsed, toggleSidebar,
+    cart, setCart, isCartOpen, setIsCartOpen, addToCart, removeFromCart, clearCart,
+    selectedAuthorProduct, setGlobalAuthorProduct,
+    selectedStudentProduct, setSelectedStudentProduct, setGlobalStudentProduct,
+    availableStudentProducts, setAvailableStudentProducts
+  }), [
+    theme, toggleTheme,
+    sidebarCollapsed, setSidebarCollapsed, toggleSidebar,
+    cart, setCart, isCartOpen, setIsCartOpen, addToCart, removeFromCart, clearCart,
+    selectedAuthorProduct, setGlobalAuthorProduct,
+    selectedStudentProduct, setSelectedStudentProduct, setGlobalStudentProduct,
+    availableStudentProducts, setAvailableStudentProducts
+  ]);
+
   return (
-    <AppContext.Provider value={{ 
-      theme, toggleTheme, 
-      sidebarCollapsed, setSidebarCollapsed, toggleSidebar,
-      cart, setCart, isCartOpen, setIsCartOpen, addToCart, removeFromCart, clearCart,
-      selectedAuthorProduct, setGlobalAuthorProduct,
-      selectedStudentProduct, setSelectedStudentProduct, setGlobalStudentProduct,
-      availableStudentProducts, setAvailableStudentProducts
-    }}>
+    <AppContext.Provider value={value}>
       {children}
     </AppContext.Provider>
   );

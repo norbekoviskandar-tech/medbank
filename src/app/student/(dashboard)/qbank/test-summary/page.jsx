@@ -80,6 +80,20 @@ export default function TestSummaryPage() {
   const [testResult, setTestResult] = useState(null);
    const [activeTab, setActiveTabState] = useState("results"); // results, analysis
    const [copySuccess, setCopySuccess] = useState(null);
+   const [isTemplateB, setIsTemplateB] = useState(false);
+
+   useEffect(() => {
+     if (!selectedStudentProduct?.id) return;
+
+     const val =
+       typeof window !== "undefined"
+         ? localStorage.getItem(`medbank_product_templateType_${selectedStudentProduct.id}`)
+         : null;
+
+     if (val === "ECG" || selectedStudentProduct?.templateType === "ECG") {
+       setIsTemplateB(true);
+     }
+   }, [selectedStudentProduct]);
 
    const setActiveTab = (tab) => {
       setActiveTabState(tab);
@@ -153,6 +167,20 @@ export default function TestSummaryPage() {
 
      const percentage = total > 0 ? Math.round((correct / total) * 100) : 0;
 
+     // Enrich attemptAnswers with real question data (subject/system/topic) if available
+     const enrichedAnswers = attemptAnswers.map(a => {
+       const question = testResult.questions?.find(q => String(q.id) === String(a.questionId));
+       if (question) {
+         return {
+           ...a,
+           subject: question.subject || a.subject,
+           system: question.system || a.system,
+           topic: question.topic || a.topic
+         };
+       }
+       return a;
+     });
+
      // Summary is read-only; we do not compute subject stats without frozen question snapshots.
      return {
        total,
@@ -161,9 +189,9 @@ export default function TestSummaryPage() {
        omitted,
        flagged,
        percentage,
-       attemptAnswers
+       attemptAnswers: enrichedAnswers
      };
-  }, [testResult]);
+   }, [testResult]);
 
    const handleCopyId = (id) => {
       navigator.clipboard.writeText(id).then(() => {
@@ -344,9 +372,24 @@ export default function TestSummaryPage() {
                               const isCorrect = !isOmitted && !!a.isCorrect;
                               const attemptKey = testResult.testAttemptId || testResult.testId || 'attempt';
                               
-                              // Format subject display
-                              const displaySubject = a.subject ? (a.subject.length > 15 ? 'Multiple' : a.subject) : '--';
-                              const displaySystem = a.system ? (a.system.length > 15 ? 'Multiple' : a.system) : '--';
+                              // Helper to format subject/system display
+                              const formatDisplay = (value, type) => {
+                                if (!value) return '--';
+                                // If it's a string with commas, treat as multiple
+                                const items = typeof value === 'string' ? value.split(',').map(s => s.trim()).filter(Boolean) : [value];
+                                if (items.length === 0) return '--';
+                                if (items.length > 1) return 'Multiple';
+                                const single = items[0];
+                                // For Template B (ECG) products, format system as "Cardiology-ECG" if it's Cardiology
+                                if (type === 'system' && isTemplateB && single.toLowerCase() === 'cardiology') {
+                                  return 'Cardiology-ECG';
+                                }
+                                // Truncate long strings
+                                return single.length > 15 ? single.substring(0, 15) + '...' : single;
+                              };
+                              
+                              const displaySubject = formatDisplay(a.subject, 'subject');
+                              const displaySystem = formatDisplay(a.system, 'system');
                               const displayTopic = a.topic || 'Standard Item';
                               
                               return (

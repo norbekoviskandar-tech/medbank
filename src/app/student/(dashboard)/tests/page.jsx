@@ -47,8 +47,11 @@ export default function PreviousTestsPage() {
 
       if (questionIds.length === 0) return;
 
+      // Store the original testId in sessionStorage for reuse
+      sessionStorage.setItem('current_test_id', test.testId);
+
       localStorage.setItem("medbank_current_test", JSON.stringify({
-         testId: test.testId,
+         testId: test.testId, // Use the original testId
          testNumber: test.testNumber,
          date: test.date,
          packageId: test.packageId || test.productId || null,

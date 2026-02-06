@@ -1,9 +1,10 @@
 "use client";
 
-import React from "react";
+import React, { memo } from "react";
+import Image from "next/image";
 import { useExam } from "@/context/ExamContext";
 
-export default function QuestionViewer() {
+function QuestionViewer() {
   const { currentQuestion: q } = useExam();
 
   if (!q) return null;
@@ -14,9 +15,11 @@ export default function QuestionViewer() {
         {q.stem}
         {q.stemImage?.data && (
           <div className="mt-8 flex justify-center">
-            <img 
+            <Image 
               src={q.stemImage.data} 
               alt="stem" 
+              width={400} height={300}
+              loading="lazy"
               className="max-w-full rounded border-2 border-zinc-100 shadow-sm" 
             />
           </div>
@@ -25,3 +28,5 @@ export default function QuestionViewer() {
     </div>
   );
 }
+
+export default memo(QuestionViewer);
