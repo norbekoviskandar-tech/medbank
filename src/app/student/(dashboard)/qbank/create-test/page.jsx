@@ -4,8 +4,8 @@ import { useEffect, useState, useContext } from "react";
 import { AppContext } from "@/context/AppContext";
 import { getAllQuestions } from "@/services/question.service";
 import { getProductById } from "@/services/product.service";
-import CreateTestTemplateA from "../CreateTestTemplateA";
-import CreateTestTemplateB from "../CreateTestTemplateB";
+import CreateTestTemplateA from "./CreateTestTemplateA";
+import CreateTestTemplateB from "./CreateTestTemplateB";
 
 export default function CreateTestPage() {
   const [questions, setQuestions] = useState([]);
