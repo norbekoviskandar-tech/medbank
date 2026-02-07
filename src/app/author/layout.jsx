@@ -89,10 +89,17 @@ export default function AuthorLayout({ children }) {
             return;
         }
 
+        if (!user) {
+          console.warn("[Author Security] Session invalid - user record not found.");
+          localStorage.removeItem("medbank_user");
+          router.push("/author/login");
+          return;
+        }
+
         const effectiveRole = String(user?.role || '').toLowerCase().trim();
         const userEmail = user?.email || "No Email";
 
-        if (!user || (effectiveRole !== 'admin' && effectiveRole !== 'author' && user.email !== 'norbekoviskandar@gmail.com')) {
+        if (effectiveRole !== 'admin' && effectiveRole !== 'author' && user.email !== 'norbekoviskandar@gmail.com') {
           console.warn(`[Author Security] ACCESS DENIED for ${userEmail} (Role: ${effectiveRole}). Redirecting to student portal.`);
           router.push("/student/portal");
           return;

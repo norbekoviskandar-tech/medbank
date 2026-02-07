@@ -15,12 +15,8 @@ export async function GET(request, { params }) {
       return NextResponse.json(attempt);
     }
 
-    // 2. Fallback to standard test lookup (requires packageId)
-    if (!packageId) {
-      return NextResponse.json({ error: 'packageId query parameter required for standard test lookup' }, { status: 400 });
-    }
-
-    const test = getTestById(id, packageId);
+    // 2. Fallback to standard test lookup
+    const test = getTestById(id, packageId || 'all');
     
     if (!test) {
       return NextResponse.json({ error: 'Test or Attempt not found' }, { status: 404 });

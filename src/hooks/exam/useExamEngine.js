@@ -303,6 +303,14 @@ export function useExamEngine() {
       }));
 
       await saveTest(results);
+
+      const payload = {
+        testId: results.testId,
+        packageId: results.packageId || localStorage.getItem("medbank_selected_package"),
+        packageName: currentTestData.packageName || localStorage.getItem("medbank_selected_package_name"),
+        mode: results.mode
+      };
+      localStorage.setItem("medbank_last_test_info", JSON.stringify(payload));
       localStorage.setItem("medbank_last_test_id", results.testId);
       localStorage.setItem("medbank_current_test", JSON.stringify({ ...results, isReview: false }));
       router.push("/student/qbank/test-summary");

@@ -62,7 +62,7 @@ export default function Dashboard() {
     try {
       const pId = selectedAuthorProduct?.id;
       const [allQs, globalStats, engagementData] = await Promise.all([
-        getAllQuestions(pId).catch(e => { console.error(e); return []; }),
+        getAllQuestions(pId, true).catch(e => { console.error(e); return []; }),
         getDashboardStats(pId).catch(e => { console.error(e); return {}; }),
         getEngagementChartData(pId).catch(e => { console.error(e); return []; })
       ]);

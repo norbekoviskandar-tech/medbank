@@ -594,6 +594,14 @@ export default function TakeTestPage() {
 
   const handleSuspend = (showConfirm = true) => {
     if (isReviewMode) {
+      const currentTestData = JSON.parse(localStorage.getItem("medbank_current_test") || "{}");
+      const payload = {
+        testId: testAttemptId || currentTestData.testAttemptId || sessionTestId || currentTestData.testId,
+        packageId: currentTestData.packageId || localStorage.getItem("medbank_selected_package"),
+        packageName: currentTestData.packageName || null,
+        mode: currentTestData.mode || 'tutor'
+      };
+      localStorage.setItem("medbank_last_test_info", JSON.stringify(payload));
       router.push("/student/qbank/test-summary");
       return;
     }
@@ -680,6 +688,13 @@ export default function TakeTestPage() {
       const activeTestId = sessionTestId || String(currentTestData.testId || "");
       
       if (isReviewMode) {
+        const payload = {
+          testId: attemptIdToFinish || activeTestId,
+          packageId: currentTestData.packageId || localStorage.getItem("medbank_selected_package"),
+          packageName: currentTestData.packageName || null,
+          mode: currentTestData.mode || 'tutor'
+        };
+        localStorage.setItem("medbank_last_test_info", JSON.stringify(payload));
         router.push("/student/qbank/test-summary");
         return;
       }
@@ -733,6 +748,14 @@ export default function TakeTestPage() {
         console.error("CRITICAL: No testAttemptId found during submission!");
       }
 
+      // 3. Set full payload for summary page source-of-truth
+      const payload = {
+        testId: attemptIdToFinish || activeTestId,
+        packageId: currentTestData.packageId || localStorage.getItem("medbank_selected_package") || "14",
+        packageName: currentTestData.packageName || localStorage.getItem("medbank_selected_package_name") || null,
+        mode: currentTestData.mode || 'tutor'
+      };
+      localStorage.setItem("medbank_last_test_info", JSON.stringify(payload));
       localStorage.setItem("medbank_last_test_id", activeTestId);
       localStorage.removeItem("medbank_current_test");
       

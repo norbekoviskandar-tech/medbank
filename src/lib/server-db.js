@@ -501,6 +501,46 @@ function initializeSchema() {
     }
   }
 
+  // Products table (The central offering)
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS products (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      slug TEXT UNIQUE,
+      name TEXT NOT NULL,
+      description TEXT,
+      price REAL DEFAULT 0,
+      isActive INTEGER DEFAULT 1,
+      is_published INTEGER DEFAULT 1,
+      isDeleted INTEGER DEFAULT 0,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT,
+      deletedAt TEXT,
+      duration_days INTEGER DEFAULT 0,
+      templateType TEXT DEFAULT 'DEFAULT',
+      defaultCreateTestConfig TEXT DEFAULT '{}',
+      systems TEXT DEFAULT '[]',
+      subjects TEXT DEFAULT '[]',
+      plans TEXT DEFAULT '[]'
+    )
+  `);
+
+  // Migrate products table for existing databases
+  const prodCols = database.prepare("PRAGMA table_info(products)").all().map(c => c.name);
+  const prodColsToAdd = [
+    { name: 'is_published', type: 'INTEGER DEFAULT 1' },
+    { name: 'isDeleted', type: 'INTEGER DEFAULT 0' },
+    { name: 'deletedAt', type: 'TEXT' },
+    { name: 'templateType', type: "TEXT DEFAULT 'DEFAULT'" },
+    { name: 'defaultCreateTestConfig', type: "TEXT DEFAULT '{}'" }
+  ];
+  for (const col of prodColsToAdd) {
+    if (!prodCols.includes(col.name)) {
+      try {
+        database.exec(`ALTER TABLE products ADD COLUMN ${col.name} ${col.type}`);
+      } catch (e) { }
+    }
+  }
+
   // Subscription Packages table - Multi-plan support
   database.exec(`
     CREATE TABLE IF NOT EXISTS subscription_packages (
@@ -867,6 +907,61 @@ export function updateUser(user) {
   }
 
   return user;
+}
+
+export function deleteUser(id) {
+  try {
+    const db = getDb();
+
+    // Check if user exists
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    // Start transaction to ensure atomic deletion of related data
+    const deleteTx = db.transaction((userId) => {
+      // 1. Cleanup related data (tests, student_answers, subscriptions, etc.)
+      // These must be deleted BEFORE the user to avoid foreign key violations
+      db.prepare('DELETE FROM subscriptions WHERE userId = ?').run(userId);
+      db.prepare('DELETE FROM user_questions WHERE userId = ?').run(userId);
+      db.prepare('DELETE FROM notifications WHERE userId = ?').run(userId);
+      db.prepare('DELETE FROM student_cognition_profiles WHERE userId = ?').run(userId);
+      db.prepare('DELETE FROM planner WHERE userId = ?').run(userId);
+      db.prepare('DELETE FROM user_questions_archive WHERE userId = ?').run(userId);
+      db.prepare('DELETE FROM tests_archive WHERE userId = ?').run(userId);
+
+      // Handle tests and student_answers carefully
+      const testIds = db.prepare('SELECT testId FROM tests WHERE userId = ?').all(userId).map(t => t.testId);
+      if (testIds.length > 0) {
+        const placeholders = testIds.map(() => '?').join(',');
+        db.prepare(`DELETE FROM student_answers WHERE testId IN (${placeholders})`).run(...testIds);
+        db.prepare('DELETE FROM tests WHERE userId = ?').run(userId);
+      }
+
+      // Handle test_attempts and related answer tables
+      const attemptIds = db.prepare('SELECT id FROM test_attempts WHERE userId = ?').all(userId).map(a => a.id);
+      if (attemptIds.length > 0) {
+        const placeholders = attemptIds.map(() => '?').join(',');
+        db.prepare(`DELETE FROM test_answers WHERE testAttemptId IN (${placeholders})`).run(...attemptIds);
+        // Also check for legacy or alternate attempt answer tables
+        try {
+          db.prepare(`DELETE FROM test_attempt_answers WHERE attempt_id IN (${placeholders})`).run(...attemptIds);
+        } catch (e) { }
+        db.prepare('DELETE FROM test_attempts WHERE userId = ?').run(userId);
+      }
+
+      // 2. FINALLY: Delete user record once all dependencies are cleared
+      db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+    });
+
+    deleteTx(id);
+    console.log(`User ${id} ("${user.name}") PERMANENTLY purged from registry`);
+    return true;
+  } catch (err) {
+    console.error(`DB: Failed to permanently delete user ${id}:`, err.message);
+    throw err;
+  }
 }
 
 // User Subscription Operations
@@ -1870,8 +1965,8 @@ export function getTestById(testId, productId) {
 
   console.log(`[Exam Runtime] Fetching details for test ${tidStr}`);
 
-  // Check both packageId and productId for maximum isolation
-  const t = db.prepare('SELECT * FROM tests WHERE testId = ? AND (packageId = ? OR productId = ?)').get(tidStr, pidStr, pidStr);
+  // Primary lookup by testId. Unique constraint ensures isolation.
+  const t = db.prepare('SELECT * FROM tests WHERE testId = ?').get(tidStr);
   if (t) {
     try {
       const safeParse = (str, fallback) => {
@@ -2316,29 +2411,27 @@ export function deleteProduct(id) {
   try {
     const db = getDb();
     
-    // Check if product exists and is not already deleted
+    // Check if product exists
     const product = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
     if (!product) {
       throw new Error('Product not found');
     }
     
-    if (product.isDeleted) {
-      console.log(`Product ${id} is already deleted`);
-      return true;
-    }
-    
-    // Soft delete: mark as deleted instead of removing
-    const stmt = db.prepare('UPDATE products SET isDeleted = 1, deletedAt = ?, isActive = 0 WHERE id = ?');
-    const result = stmt.run(new Date().toISOString(), id);
+    // PERMANENT DELETE: Remove from database completely
+    const result = db.prepare('DELETE FROM products WHERE id = ?').run(id);
     
     if (result.changes === 0) {
-      throw new Error('Failed to delete product');
+      throw new Error('Failed to delete product from database');
     }
     
-    console.log(`Product ${id} soft deleted successfully`);
+    // Also cleanup related mappings if necessary
+    // Note: If you want to delete questions linked to this product, you'd add that here.
+    // However, usually questions might belong to multiple products via packageId.
+
+    console.log(`Product ${id} ("${product.name}") PERMANENTLY deleted from database`);
     return true;
   } catch (err) {
-    console.error(`DB: Failed to delete product ${id}:`, err.message);
+    console.error(`DB: Failed to permanently delete product ${id}:`, err.message);
     throw err;
   }
 }
@@ -2446,8 +2539,8 @@ export function getAllQuestions(productId = null, includeUnpublished = false) {
   const params = [];
   
   if (productId) {
-    query += ` WHERE q.productId = ?`;
-    params.push(productId);
+    query += ` WHERE (q.productId = ? OR q.packageId = ?)`;
+    params.push(productId, productId);
   }
   
   if (!includeUnpublished) {

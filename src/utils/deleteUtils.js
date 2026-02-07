@@ -166,11 +166,11 @@ export function removeItemsFromArray(items, deletedIds) {
 function getDefaultConfirmMessage(type) {
   switch (type) {
     case 'product':
-      return "Are you sure you want to delete this product? This will fail if users have active subscriptions based on this duration.";
+      return "Are you sure you want to PERMANENTLY delete this product? This action cannot be undone and will remove the record from the database completely.";
     case 'question':
       return "Delete this question permanently? This cannot be undone.";
     case 'user':
-      return "Are you sure you want to delete this user? This action cannot be undone.";
+      return "Are you sure you want to PERMANENTLY delete this user account? This will PURGE ALL DATA (tests, stats, progress) and remove the record completely. This cannot be undone.";
     default:
       return `Are you sure you want to delete this ${type}?`;
   }

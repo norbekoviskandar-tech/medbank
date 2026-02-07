@@ -74,7 +74,16 @@ export default function PreviousTestsPage() {
    };
 
    const handleViewSummary = (test, tab = "results") => {
-      localStorage.setItem("medbank_last_test_id", (test.latestAttemptId || test.testId).toString());
+      // Store full payload for summary page source-of-truth
+      const payload = {
+         testId: (test.latestAttemptId || test.testId).toString(),
+         packageId: test.packageId || test.productId || null,
+         packageName: test.packageName || null,
+         mode: test.mode || 'tutor'
+      };
+
+      localStorage.setItem("medbank_last_test_info", JSON.stringify(payload));
+      localStorage.setItem("medbank_last_test_id", payload.testId); // Keep for legacy
       localStorage.setItem("medbank_summary_tab", tab);
       router.push(`/student/qbank/test-summary?tab=${encodeURIComponent(tab)}`);
    };

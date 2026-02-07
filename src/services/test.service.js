@@ -114,11 +114,8 @@ export async function getAllTests(packageId = null) {
 
 export async function getTestById(id, productId) {
   try {
-    if (!productId) {
-      console.warn('getTestById called without productId');
-      return null;
-    }
-    const res = await fetch(`${API_BASE}/${id}?packageId=${productId}`);
+    const query = productId ? `?packageId=${productId}` : '';
+    const res = await fetch(`${API_BASE}/${id}${query}`);
     if (!res.ok) {
       if (res.status === 404) return null;
       throw new Error('Failed to fetch test');

@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { handleDeleteItem, handleBulkDelete, removeItemsFromArray } from '@/utils/deleteUtils';
+import { handleDeleteItem, handleBulkDelete as bulkDeleteItems, removeItemsFromArray } from '@/utils/deleteUtils';
 
 /**
  * React hook for handling delete operations with loading states
@@ -56,7 +56,7 @@ export function useDeleteItem(type, setItems, setSelectedIds) {
     setError(null);
     
     try {
-      const result = await handleBulkDelete(type, ids, {
+      const result = await bulkDeleteItems(type, ids, {
         ...options,
         onSuccess: ({ success, failed }) => {
           // Update UI state

@@ -35,6 +35,12 @@ export default function AppLayout({ children }) {
       import("@/services/user.service").then(async ({ getUserById }) => {
         const userData = await getUserById(userId);
         setUser(userData);
+        if (!userData) {
+          console.warn("[Student Security] Session invalid - user record not found. Clearing credentials.");
+          handleLogout();
+          return;
+        }
+
         if (userData?.isBanned) {
           alert("Your account has been suspended. Please contact support.");
           handleLogout();

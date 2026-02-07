@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getAllUsers, getUserById, updateUser, createNotification } from '@/lib/server-db';
+import { getAllUsers, getUserById, updateUser, deleteUser, createNotification } from '@/lib/server-db';
 
 // GET /api/users - Get all users or single user by id
 export async function GET(request) {
@@ -84,9 +84,13 @@ export async function DELETE(request) {
       return NextResponse.json({ error: 'User id required' }, { status: 400 });
     }
     
-    // TODO: Implement deleteUser in server-db.js if needed
-    // deleteUser(id);
-    return NextResponse.json({ error: 'Delete user not implemented' }, { status: 501 });
+    try {
+      const result = deleteUser(id);
+      return NextResponse.json({ success: true, message: 'User permanently deleted' });
+    } catch (dbError) {
+      console.error('Delete user DB error:', dbError);
+      return NextResponse.json({ error: dbError.message || 'Failed to delete user from database' }, { status: 500 });
+    }
   } catch (error) {
     console.error('Delete user error:', error);
     return NextResponse.json({ error: 'Failed to delete user' }, { status: 500 });

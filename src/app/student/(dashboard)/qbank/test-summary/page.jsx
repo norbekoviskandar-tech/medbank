@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState, useMemo, useContext } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { AppContext } from "@/context/AppContext";
 import { 
    Eye, CheckCircle2, XCircle,
    MinusCircle, GraduationCap, Clock, FileText, ChevronLeft, Info,
@@ -76,24 +75,24 @@ function ScoreDonut({ stats }) {
 
 
 export default function TestSummaryPage() {
-  const { selectedStudentProduct } = useContext(AppContext);
-  const [testResult, setTestResult] = useState(null);
+   const [testResult, setTestResult] = useState(null);
    const [activeTab, setActiveTabState] = useState("results"); // results, analysis
    const [copySuccess, setCopySuccess] = useState(null);
    const [isTemplateB, setIsTemplateB] = useState(false);
 
    useEffect(() => {
-     if (!selectedStudentProduct?.id) return;
+      if (!testResult?.packageId) return;
 
+      const pId = testResult.packageId;
      const val =
        typeof window !== "undefined"
-         ? localStorage.getItem(`medbank_product_templateType_${selectedStudentProduct.id}`)
+           ? localStorage.getItem(`medbank_product_templateType_${pId}`)
          : null;
 
-     if (val === "ECG" || selectedStudentProduct?.templateType === "ECG") {
+      if (val === "ECG") {
        setIsTemplateB(true);
      }
-   }, [selectedStudentProduct]);
+   }, [testResult?.packageId]);
 
    const setActiveTab = (tab) => {
       setActiveTabState(tab);
@@ -102,41 +101,54 @@ export default function TestSummaryPage() {
    const [filter, setFilter] = useState("all");
   const router = useRouter();
 
-  useEffect(() => {
-     async function loadResult() {
-        // STRICT ATTEMPT-FIRST: summary must query by attempt id only
-        const attemptId = localStorage.getItem("medbank_last_attempt_id");
-        if (!attemptId) {
-          router.push("/student/qbank/create-test");
-          return;
-        }
+   useEffect(() => {
+      async function loadResult() {
+         // 1. Get attemptId from payload and fallback to legacy key
+         let attemptId = null;
+         let pkgId = null;
 
-        // Route /api/tests/[id] will return attempt when id is attemptId; productId not required for attempt lookup
-        const productId = selectedStudentProduct?.id || localStorage.getItem("medbank_selected_package") || "14";
-        const result = await getTestById(attemptId, productId);
-        if (!result) {
-          router.push("/student/qbank/create-test");
-          return;
-        }
+         const lastTestInfoStr = localStorage.getItem("medbank_last_test_info");
+         if (lastTestInfoStr) {
+            try {
+               const info = JSON.parse(lastTestInfoStr);
+               attemptId = info.testId;
+               pkgId = info.packageId;
+            } catch (e) { }
+         }
 
-        // Apply chronological numbering matching history page
-        if (!result.testNumber) {
-          const history = await getAllTests(productId);
-          const sorted = history.sort((a, b) => new Date(a.date) - new Date(b.date));
-          const idx = sorted.findIndex(t => String(t.testId) === String(result.testId));
-          result.testNumber = idx !== -1 ? idx + 1 : history.length + 1;
-        }
+         if (!attemptId) attemptId = localStorage.getItem("medbank_last_attempt_id");
 
-        setTestResult(result);
-     }
+         if (!attemptId) {
+            router.push("/student/qbank/create-test");
+            return;
+         }
 
-     loadResult();
+         // 2. Fetch test. Note: we prioritize the test ID; it carries its own product link in DB
+         // We pass null or the passed pkgId; the backend should handle it
+         const result = await getTestById(attemptId, pkgId || 'all');
+         if (!result) {
+            router.push("/student/qbank/create-test");
+            return;
+         }
 
-     const savedTab = localStorage.getItem("medbank_summary_tab");
-     if (savedTab) {
-        setActiveTab(savedTab);
-     }
-  }, [router, selectedStudentProduct]);
+         // Apply chronological numbering matching history page
+         if (!result.testNumber) {
+            const history = await getAllTests(result.packageId);
+            const sorted = history.sort((a, b) => new Date(a.date) - new Date(b.date));
+            const idx = sorted.findIndex(t => String(t.testId) === String(result.testId));
+            result.testNumber = idx !== -1 ? idx + 1 : history.length + 1;
+         }
+
+         setTestResult(result);
+      }
+
+      loadResult();
+
+      const savedTab = localStorage.getItem("medbank_summary_tab");
+      if (savedTab) {
+         setActiveTab(savedTab);
+      }
+   }, [router]);
 
    const stats = useMemo(() => {
      if (!testResult) return null;

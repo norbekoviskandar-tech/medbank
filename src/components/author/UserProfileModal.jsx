@@ -241,6 +241,33 @@ export default function UserProfileModal({ user, onClose, onUpdate }) {
                 <Mail size={16} />
                 Send Manual Alert
               </button>
+
+              <div className="h-[1px] bg-slate-100 my-2" />
+
+              <button
+                onClick={async () => {
+                  if (confirm("CRITICAL: Are you sure you want to PERMANENTLY TERMINATE this account? All tests, progress, and data will be IRREVERSIBLY PURGED.")) {
+                    try {
+                      setIsSaving(true);
+                      const { deleteUser } = await import("@/services/user.service");
+                      await deleteUser(user.id);
+                      alert("Identity Purged: Account and all associated data have been erased from the master registry.");
+                      onUpdate();
+                      onClose();
+                    } catch (err) {
+                      alert("Purge Failed: " + err.message);
+                    } finally {
+                      setIsSaving(false);
+                    }
+                  }
+                }}
+                disabled={isSaving}
+                className="w-full bg-red-50 text-red-600 border border-red-100 hover:bg-red-600 hover:text-white py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm flex items-center justify-center gap-3"
+              >
+                <AlertCircle size={16} />
+                Terminate Account permanently
+              </button>
+
               <p className="text-[10px] text-muted-foreground text-center italic mt-2 uppercase tracking-tight font-mono opacity-50">Authorized as verified administrator</p>
             </div>
           </div>
