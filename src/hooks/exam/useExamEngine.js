@@ -235,6 +235,14 @@ export function useExamEngine() {
     const processSubmission = async () => {
       setIsEnding(true);
       if (isReviewMode) {
+        const currentTestData = JSON.parse(localStorage.getItem("medbank_current_test") || "{}");
+        const payload = {
+          testId: sessionTestId || String(currentTestData.testId || ""),
+          packageId: currentTestData.packageId || localStorage.getItem("medbank_selected_package"),
+          packageName: currentTestData.packageName || null,
+          mode: currentTestData.mode || 'tutor'
+        };
+        localStorage.setItem("medbank_last_test_info", JSON.stringify(payload));
         router.push("/student/qbank/test-summary");
         return;
       }
@@ -474,6 +482,14 @@ export function useExamEngine() {
 
   const handleSuspend = useCallback((showConfirm = true) => {
     if (isReviewMode) {
+      const currentTestData = JSON.parse(localStorage.getItem("medbank_current_test") || "{}");
+      const payload = {
+        testId: sessionTestId || String(currentTestData.testId || ""),
+        packageId: currentTestData.packageId || localStorage.getItem("medbank_selected_package"),
+        packageName: currentTestData.packageName || null,
+        mode: currentTestData.mode || 'tutor'
+      };
+      localStorage.setItem("medbank_last_test_info", JSON.stringify(payload));
       router.push("/student/qbank/test-summary");
       return;
     }

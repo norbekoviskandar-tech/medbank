@@ -686,6 +686,7 @@ export default function TakeTestPage() {
       
       const currentTestData = JSON.parse(localStorage.getItem("medbank_current_test") || "{}");
       const activeTestId = sessionTestId || String(currentTestData.testId || "");
+      let attemptIdToFinish = testAttemptId || currentTestData.testAttemptId || null;
       
       if (isReviewMode) {
         const payload = {
@@ -699,7 +700,6 @@ export default function TakeTestPage() {
         return;
       }
 
-      let attemptIdToFinish = testAttemptId || currentTestData.testAttemptId || null;
       if (!attemptIdToFinish && !isReviewMode) {
         try {
           const saved = await saveTest({
