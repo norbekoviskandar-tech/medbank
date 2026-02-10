@@ -161,7 +161,7 @@ export async function clearAllUserTests(userId) {
  * ATTEMPT SCOPED ATOMIC UPDATES
  */
 
-export async function updateAttemptAnswer(attemptId, questionId, selectedOption) {
+export async function updateAttemptAnswer(attemptId, questionId, selectedOption, secondsToAdd = 0, options = {}) {
   try {
     const res = await fetch(`/api/tests/attempts/${attemptId}`, {
       method: 'PATCH',
@@ -169,8 +169,10 @@ export async function updateAttemptAnswer(attemptId, questionId, selectedOption)
       body: JSON.stringify({
         type: 'answer',
         questionId,
-        selectedOption
-      })
+        selectedOption,
+        secondsToAdd
+      }),
+      keepalive: options.keepalive
     });
     return res.ok;
   } catch (err) {

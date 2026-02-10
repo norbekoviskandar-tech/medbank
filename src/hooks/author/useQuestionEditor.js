@@ -185,10 +185,7 @@ export function useQuestionEditor() {
       return;
     }
 
-    if (isEditing && status !== 'draft') {
-        alert("IMMUTABLE ERROR: This version is published. Please use 'Revise' from the management panel.");
-        return;
-    }
+
 
     const action = shouldPublish ? "publish" : "save draft";
     if (!confirm(`Are you sure you want to ${action}?`)) return;
@@ -226,7 +223,7 @@ export function useQuestionEditor() {
       published: shouldPublish ? 1 : 0,
       stemImageMode,
       explanationImageMode,
-      createdAt: isEditing ? originalCreatedAt : new Date().toISOString(),
+      createdAt: originalCreatedAt,
       updatedAt: new Date().toISOString(),
       type: "multiple-choice",
       references,

@@ -23,21 +23,72 @@ export default function TakeTestPage() {
   const [answers, setAnswers] = useState({}); // { questionId: selection }
   const [isSubmitted, setIsSubmitted] = useState(false); 
   const [mode, setMode] = useState("tutor");
-  const [isReviewMode, setIsReviewMode] = useState(false);
-  const [elapsedTime, setElapsedTime] = useState(0);
+  const [isReviewMode, setIsReviewMode] = useState(mode === 'review');
   const [markedQuestions, setMarkedQuestions] = useState(new Set());
   const [originalTestId, setOriginalTestId] = useState(null);
   const [lockedAnswers, setLockedAnswers] = useState({}); // To identify answers that cannot be changed
   const [firstAnswers, setFirstAnswers] = useState({}); // To track first choice for change analysis
   const [sessionTestId, setSessionTestId] = useState(null);
-  const [questionDurations, setQuestionDurations] = useState({}); // { questionId: seconds }
+  const [testAttemptId, setTestAttemptId] = useState(null); // Track strict attempt ID
   const [showQuestionList, setShowQuestionList] = useState(false);
   const [strikeouts, setStrikeouts] = useState({}); // { questionId: Set of letters }
   const [modal, setModal] = useState({ show: false, title: "", message: "", onConfirm: null });
   const [isEnding, setIsEnding] = useState(false);
-  const [testAttemptId, setTestAttemptId] = useState(null); // NEW: Track strict attempt ID
   const router = useRouter();
   const handleEndBlockRef = useRef(null);
+  const unsavedSecondsRef = useRef(0);
+  const [questionDurations, setQuestionDurations] = useState({}); // Local display only
+  const [globalTime, setGlobalTime] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+
+  const formatSeconds = (sec) => {
+    const val = typeof sec === 'number' ? sec : 0;
+    const s = Math.floor(Math.abs(val));
+    const m = Math.floor(s / 60);
+    const rs = s % 60;
+    return `${m.toString().padStart(2, '0')}:${rs.toString().padStart(2, '0')}`;
+  };
+
+  // Timer Effect ("UWorld" Logic)
+  useEffect(() => {
+    // RULE: Stop timer if Review Mode, Suspended (Paused), or Question is ALREADY Answered (IN TUTOR MODE)
+    if (questions.length === 0) return;
+    const currentQ = questions[currentIndex];
+    if (!currentQ) return;
+
+    // In Test/Timed Mode, the timer runs continuously until the block ends.
+    // In Tutor Mode, it stops when the question is submitted.
+    const isTutorSubmitted = mode === 'tutor' && !!lockedAnswers[currentQ.id];
+
+    // Global Stop conditions
+    if (isReviewMode || isPaused || isEnding || isTutorSubmitted) {
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setGlobalTime(prev => prev + 1);
+
+      // Track per-question time only while active/unanswered
+      setQuestionDurations(prev => ({
+        ...prev,
+        [currentQ.id]: (prev[currentQ.id] || 0) + 1
+      }));
+      // Accumulate unsaved time for DB flush
+      unsavedSecondsRef.current += 1;
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [currentIndex, isReviewMode, answers, isPaused, isEnding, questions, mode, lockedAnswers]);
+
+  // Persistence on Unload
+  useEffect(() => {
+    const handleUnload = () => {
+      const q = questions[currentIndex];
+      if (q) syncTimeWithDB(q.id, answers[q.id], { keepalive: true });
+    };
+    window.addEventListener('beforeunload', handleUnload);
+    return () => window.removeEventListener('beforeunload', handleUnload);
+  }, [currentIndex, questions, answers]);
 
   // Auto-save answers and flags to localStorage
   const saveToLocalStorage = (updates) => {
@@ -46,10 +97,7 @@ export default function TakeTestPage() {
     localStorage.setItem("medbank_current_test", JSON.stringify(updated));
   };
 
-  // Auto-save currentIndex and elapsedTime to localStorage
-  useEffect(() => {
-    saveToLocalStorage({ currentIndex, elapsedTime });
-  }, [currentIndex, elapsedTime]);
+
 
   // Load saved state from localStorage on mount
   const loadSavedState = () => {
@@ -60,7 +108,6 @@ export default function TakeTestPage() {
       return {
         answers: parsed.answers || {},
         markedIds: parsed.markedIds || [],
-        elapsedTime: parsed.elapsedTime || 0,
         currentIndex: parsed.currentIndex || 0
       };
     } catch {
@@ -102,10 +149,6 @@ export default function TakeTestPage() {
             userId: testData.userId || localStorage.getItem("medbank_user"),
             packageId: testData.packageId || localStorage.getItem("medbank_selected_package") || "14",
             packageName: testData.packageName || localStorage.getItem("medbank_selected_package_name") || null,
-            questions: (Array.isArray(testData.questions) ? testData.questions : []).map(q => {
-              if (typeof q === 'object' && q !== null) return String(q.id);
-              return String(q);
-            }),
             isSuspended: false
           };
 
@@ -139,7 +182,20 @@ export default function TakeTestPage() {
             usingAttemptSnapshot = true;
 
             setQuestions(ordered);
+            setQuestions(ordered);
             setAnswers(sourceAnswers);
+
+            // Hydrate Durations
+            if (Array.isArray(attempt.attemptAnswers)) {
+              const durMap = {};
+              attempt.attemptAnswers.forEach(a => {
+                if (a.questionId) durMap[a.questionId] = a.timeSpentSec || 0;
+              });
+              setQuestionDurations(durMap);
+            }
+            if (typeof attempt.elapsedTime === 'number') {
+              setGlobalTime(attempt.elapsedTime);
+            }
 
             // Restore lock state
             if (testData.isReview) {
@@ -151,6 +207,8 @@ export default function TakeTestPage() {
             } else {
               setLockedAnswers({});
             }
+
+
           }
         } catch (e) {
           console.error('[Exam Runtime] Failed to load attempt snapshot; falling back to product universe', e);
@@ -182,20 +240,6 @@ export default function TakeTestPage() {
       const savedFirstAnswers = testData.firstAnswers || testData.resumeData?.firstAnswers || {};
       setFirstAnswers(savedFirstAnswers);
       const savedIndex = testData.currentIndex ?? testData.resumeData?.currentIndex ?? 0;
-      let savedTime = testData.elapsedTime ?? testData.resumeData?.elapsedTime ?? 0;
-      const savedDurations = testData.questionDurations || testData.resumeData?.questionDurations || {};
-      setQuestionDurations(savedDurations);
-
-      // If resuming a TIMED test that expired, grant "appropriate time" (e.g. 60s per omitted)
-      if (testMode === "timed" && testData.resumeData?.isOmittedResume) {
-        const timeLimit = (selectedIds || []).length * 90;
-        if (savedTime >= timeLimit) {
-          const omittedCount = (selectedIds || []).filter(id => !sourceAnswers?.[id]).length;
-          // Set elapsed time so they have 60s per omitted question left
-          savedTime = Math.max(0, timeLimit - (omittedCount * 60));
-        }
-      }
-
       const savedMarked = testData.markedIds ?? testData.resumeData?.markedIds ?? savedState.markedIds ?? [];
 
       if (!usingAttemptSnapshot) {
@@ -227,7 +271,6 @@ export default function TakeTestPage() {
       }
 
       setCurrentIndex(savedState.currentIndex || targetIndex);
-      setElapsedTime(savedState.elapsedTime || savedTime);
       setMarkedQuestions(new Set(savedMarked));
 
       // Safety Check: Ensure this test belongs to the current user
@@ -287,12 +330,10 @@ export default function TakeTestPage() {
       ...currentTestData,
       testId: activeTestId,
       currentIndex,
-      elapsedTime,
-      firstAnswers,
-      questionDurations
+      firstAnswers
     };
     localStorage.setItem("medbank_current_test", JSON.stringify(updatedTestData));
-  }, [currentIndex, elapsedTime, questions.length, isReviewMode, questionDurations, firstAnswers, isEnding]);
+  }, [currentIndex, questions.length, isReviewMode, firstAnswers, isEnding]);
 
   // Real-time synchronization helper - NOW ATTEMPT SCOPED
   const ensureAttemptId = async () => {
@@ -326,7 +367,23 @@ export default function TakeTestPage() {
     }
   };
 
-  const persistAttemptAnswerForCurrentQuestion = async (letter, nextAnswers) => {
+  // --- Sync Helper ---
+  const syncTimeWithDB = async (qId, currentOption, options = {}) => {
+    if (isReviewMode) return;
+
+    // Time Tracking (Accumulated Seconds)
+    const secondsElapsed = unsavedSecondsRef.current;
+
+    // Only flush if we have accumulated time or an answer change is forced (though usually we call this on nav)
+    // Actually rework to match Logic V2 "Flush" pattern but with accumulator
+    if (secondsElapsed > 0 || currentOption) {
+      // We use our existing persistence function but ensure it handles proper DB syncing
+      const ok = await persistAttemptAnswerForCurrentQuestion(currentOption, answers, options); // pass current answers state
+      // persistAttemptAnswerForCurrentQuestion already resets unsavedSecondsRef on success
+    }
+  };
+
+  const persistAttemptAnswerForCurrentQuestion = async (letter, nextAnswers, options = {}) => {
     if (isReviewMode || isEnding) return false;
 
     const currentTestData = JSON.parse(localStorage.getItem("medbank_current_test") || "{}");
@@ -339,13 +396,24 @@ export default function TakeTestPage() {
     const q = questions[currentIndex];
     if (!q) return false;
 
-    const ok = await updateAttemptAnswer(attemptId, q.id, letter || null);
-    if (!ok) {
+    // Time Tracking (Accumulated Seconds)
+    const secondsElapsed = unsavedSecondsRef.current;
+
+    // NOTE: UI is already updated by the interval; we just flush to DB here.
+
+    const ok = await updateAttemptAnswer(attemptId, q.id, letter || null, secondsElapsed, options);
+
+    // Reset accumulator only if successful
+    if (ok) {
+      unsavedSecondsRef.current = 0;
+    }
+
+    if (!ok && !options.keepalive) {
       console.error('[Exam Runtime] Failed to persist attempt answer to DB', { attemptId, questionId: q.id });
       return false;
     }
 
-    // DB write succeeded; persist localStorage together
+    // DB write succeeded (or assumed succeeded if keepalive); persist localStorage together
     const updated = { ...currentTestData, answers: nextAnswers };
     localStorage.setItem('medbank_current_test', JSON.stringify(updated));
     return true;
@@ -354,45 +422,11 @@ export default function TakeTestPage() {
   const q = questions[currentIndex];
   const totalQuestions = questions.length;
 
-  // Global Timer
-  useEffect(() => {
-    if (isReviewMode) return;
-    if (mode === "tutor" && isSubmitted) return;
 
-    const timer = setInterval(() => {
-      setElapsedTime(prev => prev + 1);
 
-      const currentQId = questions[currentIndex]?.id;
-      if (currentQId) {
-        setQuestionDurations(prev => ({
-          ...prev,
-          [currentQId]: (prev[currentQId] || 0) + 1
-        }));
-      }
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [isReviewMode, mode, isSubmitted, questions, currentIndex]);
 
-  // Auto-end side effect for Timed Mode
-  useEffect(() => {
-    if (mode === "timed" && !isReviewMode && totalQuestions > 0 && !modal.show && !isEnding) {
-      const timeLimit = totalQuestions * 90;
-      if (elapsedTime >= timeLimit) {
-        setModal({
-          show: true,
-          title: "Time Expired!",
-          message: "The time for this block has run out. You can choose to end and submit the test now, or suspend it to finish unanswered questions later from your history.",
-          type: "warning",
-          confirmText: "End Block Now",
-          onConfirm: () => handleEndBlock(true),
-          secondaryAction: {
-            label: "Suspend & Resume Later",
-            onClick: () => handleSuspend(false)
-          }
-        });
-      }
-    }
-  }, [elapsedTime, mode, isReviewMode, totalQuestions, modal.show, isEnding]);
+
+
 
   // Sync state to handleEndBlockRef
   useEffect(() => {
@@ -424,16 +458,14 @@ export default function TakeTestPage() {
   }, [isReviewMode, router]);
 
 
-  const formatTime = (seconds) => {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  };
+
 
   const handleSelectAnswer = async (letter) => {
     if (isReviewMode) return;
-    if (isSubmitted) return;
+
+    // In Tutor mode, we lock once submitted.
+    // In Test mode, we NEVER lock until the end.
+    if (mode === 'tutor' && isSubmitted) return;
     if (lockedAnswers[q.id]) return;
 
     // Track the first answer ever picked for this session
@@ -517,6 +549,8 @@ export default function TakeTestPage() {
         const nextLocked = { ...lockedAnswers, [q.id]: selectedAnswer };
         setLockedAnswers(nextLocked);
         setIsSubmitted(true);
+        // Persist time specifically on submit
+        await persistAttemptAnswerForCurrentQuestion(selectedAnswer, nextAnswers);
 
         try {
           const currentTestData = JSON.parse(localStorage.getItem('medbank_current_test') || '{}');
@@ -531,6 +565,12 @@ export default function TakeTestPage() {
   };
 
   const handleNext = () => {
+    // Auto-save time before moving (always sync time even if submitted)
+    // Auto-save time before moving
+    if (!isReviewMode) {
+      syncTimeWithDB(questions[currentIndex]?.id, answers[questions[currentIndex]?.id]);
+    }
+
     if (currentIndex < totalQuestions - 1) {
       const nextIdx = currentIndex + 1;
       setCurrentIndex(nextIdx);
@@ -544,6 +584,12 @@ export default function TakeTestPage() {
   };
 
   const handlePrevious = () => {
+    // Auto-save time before moving (always sync time)
+    // Auto-save time before moving
+    if (!isReviewMode) {
+      syncTimeWithDB(questions[currentIndex]?.id, answers[questions[currentIndex]?.id]);
+    }
+
     if (currentIndex > 0) {
       const prevIdx = currentIndex - 1;
       setCurrentIndex(prevIdx);
@@ -559,20 +605,18 @@ export default function TakeTestPage() {
     const isNowMarked = !newMarked.has(q.id);
 
     // Allow flag/unflag during review as well
-    if (!isReviewMode) {
-      // Atomic attempt update + localStorage sync (together)
-      const currentTestData = JSON.parse(localStorage.getItem("medbank_current_test") || "{}");
-      const attemptId = currentTestData.testAttemptId || testAttemptId;
-      if (!attemptId) {
-        console.error('[Exam Runtime] No attemptId for flag update');
-        return;
-      }
+    // Atomic attempt update + localStorage sync (together)
+    const currentTestData = JSON.parse(localStorage.getItem("medbank_current_test") || "{}");
+    const attemptId = currentTestData.testAttemptId || testAttemptId;
+    if (!attemptId) {
+      console.error('[Exam Runtime] No attemptId for flag update');
+      return;
+    }
 
-      const ok = await updateAttemptFlag(attemptId, q.id, isNowMarked);
-      if (!ok) {
-        console.error('[Exam Runtime] Failed to persist attempt flag to DB', { attemptId, questionId: q.id });
-        return;
-      }
+    const ok = await updateAttemptFlag(attemptId, q.id, isNowMarked);
+    if (!ok) {
+      console.error('[Exam Runtime] Failed to persist attempt flag to DB', { attemptId, questionId: q.id });
+      return;
     }
 
     // Update React state + localStorage together
@@ -619,8 +663,6 @@ export default function TakeTestPage() {
             questionIds: questions.map(qObj => String(qObj?.id)).filter(Boolean),
             answers: { ...answers },
             markedIds: Array.from(markedQuestions).map(String),
-            timeSpent: { ...questionDurations },
-            elapsedTime,
             questionSnapshots: questions
           };
           const ok = await snapshotAttempt(attemptId, snap);
@@ -647,15 +689,13 @@ export default function TakeTestPage() {
           userAnswer: answers[q?.id] || null,
           subject: q?.subject,
           system: q?.system,
-          timeSpent: questionDurations[q?.id] || 0
+          timeSpent: 0
         })),
         mode,
         pool: testData.pool || "All Questions",
         answers,
         firstAnswers,
-        questionDurations,
         currentIndex,
-        elapsedTime,
         markedIds: Array.from(markedQuestions),
         isSuspended: true,
         universeSize: testData.universeSize || questions.length,
@@ -732,8 +772,7 @@ export default function TakeTestPage() {
           questionIds: questions.map(qObj => String(qObj?.id)).filter(Boolean),
           answers: { ...answers },
           markedIds: Array.from(markedQuestions).map(String),
-          timeSpent: { ...questionDurations },
-          elapsedTime,
+          timeSpent: {},
           questionSnapshots: questions
         };
 
@@ -827,7 +866,8 @@ export default function TakeTestPage() {
               <span className="text-[14px] font-bold text-white tracking-tight leading-none">{q.id}</span>
             </div>
           </div>
-          <div 
+
+          <div
             onClick={toggleMark}
             className="flex items-center gap-1.5 cursor-pointer group ml-2 hover:text-orange-400 transition-colors"
           >
@@ -854,12 +894,31 @@ export default function TakeTestPage() {
             ))}
           </div>
 
-          <div className="flex items-center gap-2 font-mono text-[16px] font-bold tracking-tight bg-black/20 px-3 py-1 rounded border border-white/5">
-            {mode === "timed"
-              ? formatTime(Math.max(0, (totalQuestions * 90) - elapsedTime))
-              : formatTime(elapsedTime)
-            }
-          </div>
+
+          {/* VISUAL TIMER LOGIC */}
+          {!isReviewMode && (mode !== 'tutor' || !isSubmitted) ? (
+            <div className={`flex items-center gap-2 font-mono text-[16px] font-bold tracking-tight px-3 py-1 rounded border border-white/5 ${mode === 'timed' ? 'text-amber-400 bg-amber-400/10' : 'text-zinc-400 bg-black/20'}`}>
+              {(() => {
+                if (mode === 'timed') {
+                  const limit = questions.length * 90; // Default 90s per question
+                  const remaining = Math.max(0, limit - globalTime);
+                  return formatSeconds(remaining);
+                }
+                return formatSeconds(globalTime);
+              })()}
+            </div>
+          ) : isReviewMode ? (
+            <button
+              onClick={() => router.push('/student/qbank/test-summary')}
+              className="px-4 py-1.5 bg-white/5 hover:bg-emerald-500/20 hover:text-emerald-400 border border-white/10 hover:border-emerald-500/30 rounded text-[10px] font-black uppercase tracking-[0.15em] transition-all active:scale-95"
+            >
+              Exit Review
+            </button>
+          ) : (
+            <div className="w-[80px]" /> /* Empty space holder when hidden */
+          )}
+
+
         </div>
       </header>
 
@@ -869,6 +928,36 @@ export default function TakeTestPage() {
         <aside
           className={`bg-[#002b5c] border-r border-[#16368a] transition-all duration-300 overflow-y-auto no-scrollbar flex flex-col ${showQuestionList ? 'w-[64px]' : 'w-0'}`}
         >
+          {showQuestionList && isReviewMode && (
+            <div className="py-6 border-b border-white/10 flex flex-col items-center gap-6 text-white/60 bg-black/20">
+              <div className="flex flex-col items-center gap-2" title="Results Summary">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-emerald-400" />
+                  <span className="text-[12px] font-black text-emerald-400">{questions.filter(qItem => answers[qItem.id] === qItem.correct).length}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-red-500" />
+                  <span className="text-[12px] font-black text-red-500">{questions.filter(qItem => answers[qItem.id] && answers[qItem.id] !== qItem.correct).length}</span>
+                </div>
+              </div>
+              <div className="flex flex-col items-center h-px w-8 bg-white/10" />
+              <div className="flex flex-col items-center gap-1">
+                <span className="text-[9px] font-black uppercase tracking-tighter opacity-40">Peer Avg</span>
+                <span className="text-[12px] font-black text-white/80">
+                  {(() => {
+                    let peerSum = 0;
+                    questions.forEach(qItem => {
+                      const dist = qItem.choiceDistribution || {};
+                      const totalPicks = Object.values(dist).reduce((a, b) => a + b, 0);
+                      const correctPicks = dist[qItem.correct] || 0;
+                      peerSum += totalPicks > 0 ? (correctPicks / totalPicks) : 0;
+                    });
+                    return questions.length > 0 ? Math.round((peerSum / questions.length) * 100) : 0;
+                  })()}%
+                </span>
+              </div>
+            </div>
+          )}
           {questions.map((_, idx) => {
             const isCurrent = idx === currentIndex;
             const qItem = questions[idx];
@@ -933,13 +1022,14 @@ export default function TakeTestPage() {
                 </div>
               )}
             </div>
+
           </div>
 
             {/* BOTTOM SECTION: Choices and Rest of Parts */}
             <div className="w-full space-y-10">
             {/* Choices */}
               <div className="space-y-4">
-              {q.choices.map((choice, i) => {
+                {(q.choices || []).map((choice, i) => {
                 const letter = String.fromCharCode(65 + i);
                 const isSelected = selectedAnswer === letter;
                 const isCorrect = q.correct === letter;
@@ -959,7 +1049,7 @@ export default function TakeTestPage() {
                 }
 
                 if (isReviewMode || (mode === "tutor" && isSubmitted)) {
-                  choiceStyle = "border-transparent bg-transparent pointer-events-none";
+                  choiceStyle = "border-transparent bg-transparent pointer-events-none opacity-80 cursor-default";
                   if (isSelected) {
                     radioStyle = "border-[#0072bc] bg-[#0072bc]";
                   } else if (isCorrect) {
@@ -1027,10 +1117,10 @@ export default function TakeTestPage() {
               <div className="pt-2">
                 <button 
                   onClick={handleSubmit}
-                  disabled={!selectedAnswer || (mode === "tutor" && isSubmitted)}
+                    disabled={(mode === "tutor" && isSubmitted) && !selectedAnswer}
                   className="w-full sm:w-auto bg-[#0072bc] hover:bg-[#005a96] text-white px-12 py-3 rounded shadow-lg font-bold text-[13px] uppercase tracking-wider transition-all active:scale-95 disabled:opacity-30 disabled:hover:bg-[#0072bc]"
                 >
-                  {mode === "tutor" ? "Submit" : "Next"}
+                    {mode === "tutor" && !isSubmitted ? "Submit" : "Next"}
                 </button>
               </div>
             )}
@@ -1058,23 +1148,25 @@ export default function TakeTestPage() {
                               return totalPicks > 0 ? Math.round((correctPicks / totalPicks) * 100) : 0;
                             })()}%
                           </span>
-                          <span className="text-zinc-500 text-[11px] font-bold uppercase tracking-wider mt-1">Answered correctly</span>
+                            <span className="text-zinc-500 text-[11px] font-bold uppercase tracking-wider mt-1">Others Correct</span>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-3 border-l border-zinc-700/50 pl-10 h-10">
                         <Clock size={24} className="text-zinc-400 opacity-60" strokeWidth={1.5} />
                         <div className="flex flex-col">
-                          <span className="text-zinc-100 dark:text-zinc-200 font-bold leading-none text-lg">
-                            {questionDurations[q.id] || 0} secs
+                            <span className="text-white font-bold leading-none text-lg">
+                              {formatSeconds(questionDurations[q.id] || 0)}
                           </span>
-                          <span className="text-zinc-500 text-[11px] font-bold uppercase tracking-wider mt-1">Time Spent</span>
+                            <span className="text-zinc-500 text-[11px] font-bold uppercase tracking-wider mt-1">Time Spent</span>
                         </div>
                       </div>
+
+
                     </div>
                     
                       <div className="text-[17px] leading-relaxed text-zinc-800 dark:text-zinc-200 space-y-4">
-                        {q.explanationCorrect?.split('\n').map((para, i) => <p key={i}>{para}</p>)}
+                        {(q.explanationCorrect || '').split('\n').map((para, i) => <p key={i}>{para}</p>)}
                     </div>
                   </div>
 
@@ -1082,7 +1174,7 @@ export default function TakeTestPage() {
                       <div className="pt-8 border-t border-zinc-100">
                         <h4 className="text-[11px] font-black uppercase tracking-widest text-zinc-400 dark:text-zinc-600 mb-4">Incorrect Explanations</h4>
                         <div className="text-[15px] leading-relaxed text-zinc-500 dark:text-zinc-400 italic space-y-3">
-                          {q.explanationWrong.split('\n').map((para, i) => <p key={i}>{para}</p>)}
+                          {(q.explanationWrong || '').split('\n').map((para, i) => <p key={i}>{para}</p>)}
                         </div>
                     </div>
                   )}
@@ -1108,23 +1200,29 @@ export default function TakeTestPage() {
       {/* FOOTER */}
       <footer className="bg-[#002b5c] text-white h-[45px] flex items-center px-0 shrink-0 shadow-[0_-10px_30px_rgba(0,0,0,0.15)] z-50 border-t border-white/10">
         <div className="flex items-center h-full">
-          <button
-            onClick={() => handleEndBlock()}
-            className="flex items-center gap-2 px-4 h-full hover:bg-white/10 transition-colors group"
-          >
-            <Power size={18} className="text-white/70 group-hover:text-white" />
-            <span className="text-[13px] font-medium leading-none">{isReviewMode ? "Exit" : "End"}</span>
-          </button>
+          {!isReviewMode && (
+            <button
+              onClick={() => handleEndBlock()}
+              className="flex items-center gap-2 px-4 h-full hover:bg-white/10 transition-colors group"
+            >
+              <Power size={18} className="text-white/70 group-hover:text-white" />
+              <span className="text-[13px] font-medium leading-none">End</span>
+            </button>
+          )}
 
-          <div className="w-px h-6 bg-white/20" />
+          {!isReviewMode && (
+            <>
+              <div className="w-px h-6 bg-white/20" />
 
-          <button
-            onClick={() => handleSuspend()}
-            className="flex items-center gap-2 px-4 h-full hover:bg-white/10 transition-colors group"
-          >
-            <Pause size={18} className="text-white/70 group-hover:text-white" />
-            <span className="text-[13px] font-medium leading-none">Suspend</span>
-          </button>
+              <button
+                onClick={() => handleSuspend()}
+                className="flex items-center gap-2 px-4 h-full hover:bg-white/10 transition-colors group"
+              >
+                <Pause size={18} className="text-white/70 group-hover:text-white" />
+                <span className="text-[13px] font-medium leading-none">Suspend</span>
+              </button>
+            </>
+          )}
         </div>
 
         <div className="flex-1 flex justify-center h-full">
@@ -1159,7 +1257,6 @@ export default function TakeTestPage() {
         ::selection { background: #bfdbfe; color: #1e3a8a; }
       `}</style>
 
-      {/* CUSTOM CONFIRMATION MODAL */}
       {modal.show && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-[#001b3d]/60 backdrop-blur-[2px] animate-in fade-in duration-300" onClick={() => setModal({ ...modal, show: false })} />
@@ -1225,6 +1322,23 @@ export default function TakeTestPage() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Suspend Modal Overlay */}
+      {isPaused && (
+        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex flex-col items-center justify-center text-white animate-in fade-in duration-300">
+          <h2 className="text-3xl font-bold mb-2">Test Suspended</h2>
+          <p className="text-zinc-400 mb-8">Your progress and timer are saved.</p>
+          <button
+            onClick={() => {
+              // unsavedSecondsRef does not need reset because timer was paused
+              setIsPaused(false);
+            }}
+            className="bg-blue-600 hover:bg-blue-500 px-8 py-3 rounded-full font-bold transition-all shadow-lg hover:shadow-blue-500/30"
+          >
+            Resume Test
+          </button>
         </div>
       )}
     </div>

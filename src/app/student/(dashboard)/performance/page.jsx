@@ -31,7 +31,9 @@ export default function Performance() {
     readinessScore: 0,
     overthinkingIndex: 0,
     impulsivityIndex: 0,
-    fatigueFactor: 0
+    impulsivityIndex: 0,
+    fatigueFactor: 0,
+    totalTime: 0
   });
 
   const [hoveredScore, setHoveredScore] = useState(null); // 'correct', 'incorrect', 'omitted'
@@ -123,7 +125,9 @@ export default function Performance() {
           corToInc,
           incToCor,
           incToInc,
-          avgTime: avgTime,
+          incToInc,
+          avgTime: productStats.avgTime || 0,
+          totalTime: productStats.totalTime || 0,
           avgVolatility: (productStats.correctAnswers + productStats.incorrectAnswers) > 0 
             ? (totalVolatilitySteps / (productStats.correctAnswers + productStats.incorrectAnswers)).toFixed(1) 
             : 0,
@@ -174,6 +178,10 @@ export default function Performance() {
       </div>
 
       <div className="space-y-12">
+
+        {/* Pacing Dashboard */}
+        <PerformanceDashboard stats={stats} />
+
         {/* Row 1: Score & Changes */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
            {/* Big Circle Chart */}
@@ -424,3 +432,30 @@ function StatRow({ label, value, isLast }) {
     </div>
   );
 }
+
+function PerformanceDashboard({ stats }) {
+  const avg = Math.round(stats.avgTime || 0);
+  const isEfficient = avg <= 90;
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800">
+        <p className="text-zinc-400 text-xs uppercase font-black">Average Pace</p>
+        <h2 className={`text-4xl font-bold mt-2 ${isEfficient ? 'text-emerald-500' : 'text-amber-500'}`}>
+          {avg}s <span className="text-sm font-normal text-zinc-500">/ question</span>
+        </h2>
+        <p className="text-zinc-500 text-xs mt-4">
+          {isEfficient ? "✓ Optimal for exam conditions" : "⚠ Try to reduce reading time"}
+        </p>
+      </div>
+
+      <div className="bg-zinc-900 p-6 rounded-3xl border border-zinc-800">
+        <p className="text-zinc-400 text-xs uppercase font-black">Total Study Time</p>
+        <h2 className="text-4xl font-bold mt-2 text-white">
+          {Math.floor((stats.totalTime || 0) / 3600)}h {Math.floor(((stats.totalTime || 0) % 3600) / 60)}m
+        </h2>
+        <p className="text-zinc-500 text-xs mt-4">Across all completed blocks</p>
+      </div>
+    </div>
+  );
+};

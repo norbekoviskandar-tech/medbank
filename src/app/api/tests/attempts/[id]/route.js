@@ -1,15 +1,21 @@
 import { NextResponse } from 'next/server';
-import { updateAttemptAnswer, updateAttemptFlag, snapshotAttempt, finishAttempt } from '@/lib/server-db';
+import { updateAttemptAnswer, updateAttemptFlag, snapshotAttempt, finishAttempt, updateAttemptReviewMetadata } from '@/lib/server-db';
 
 export async function PATCH(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { type, questionId, selectedOption, isFlagged } = body;
+    const { type, questionId, selectedOption, isFlagged, reviewMetadata, secondsToAdd } = body;
+
+    if (type === 'review') {
+      updateAttemptReviewMetadata(id, reviewMetadata);
+      return NextResponse.json({ success: true });
+    }
 
     if (type === 'answer') {
       if (!questionId) return NextResponse.json({ error: 'questionId required' }, { status: 400 });
-      updateAttemptAnswer(id, questionId, selectedOption);
+      // We send the 'secondsToAdd' to the DB to be added to the total
+      updateAttemptAnswer(id, questionId, selectedOption, secondsToAdd || 0);
       return NextResponse.json({ success: true });
     }
 

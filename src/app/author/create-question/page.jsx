@@ -22,7 +22,7 @@ function CreateQuestionPageInner() {
         <MetadataPanel editor={editor} />
 
         {/* MAIN CONTENT: EDITORS */}
-        <fieldset disabled={editor.status !== 'draft'} className="space-y-4">
+        <fieldset className="space-y-4">
           <StemEditor editor={editor} />
           <OptionEditor editor={editor} />
           <ExplanationEditor editor={editor} />

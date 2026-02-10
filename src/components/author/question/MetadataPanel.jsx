@@ -149,36 +149,22 @@ export default function MetadataPanel({ editor }) {
       </div>
 
       <div className="flex flex-col gap-2 mt-4">
-        {status === 'draft' ? (
-            <>
                 <button 
-                type="button" 
-                onClick={() => saveQuestion(true)} 
-                className="w-full bg-[#0066CC] text-white p-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-[#0066CC]/20 hover:bg-[#0055AA] transition-all active:scale-95 flex items-center justify-center gap-2"
+          type="button"
+          onClick={() => saveQuestion(true)}
+          className="w-full bg-[#0066CC] text-white p-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-[#0066CC]/20 hover:bg-[#0055AA] transition-all active:scale-95 flex items-center justify-center gap-2"
                 >
-                <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-                Publish Live
+          <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+          {status === 'published' ? 'Update Published' : 'Publish Live'}
                 </button>
                 
                 <button 
-                type="button" 
-                onClick={() => saveQuestion(false)} 
-                className="w-full bg-white text-[#1B263B] p-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border border-[#1B263B]/10 hover:border-[#1B263B]/30 hover:bg-slate-50 transition-all active:scale-95 shadow-sm"
+          type="button"
+          onClick={() => saveQuestion(false)}
+          className="w-full bg-white text-[#1B263B] p-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border border-[#1B263B]/10 hover:border-[#1B263B]/30 hover:bg-slate-50 transition-all active:scale-95 shadow-sm"
                 >
-                Save Draft
-                </button>
-            </>
-        ) : (
-            <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-center">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Immutable Version</p>
-                <button 
-                    disabled
-                    className="w-full bg-slate-200 text-slate-400 p-3 rounded-xl text-[10px] font-black uppercase tracking-widest cursor-not-allowed"
-                >
-                    Locked for Study
-                </button>
-            </div>
-        )}
+          Save Draft
+        </button>
 
         <button
           type="button"

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { safeGetDb, getAllQuestions, updateQuestion, deleteQuestion } from '@/lib/server-db';
+import { safeGetDb, getAllQuestions, updateQuestion, createQuestion, deleteQuestion } from '@/lib/server-db';
 
 // GET /api/questions?packageId=xxx - Get questions
 export async function GET(request) {
@@ -116,36 +116,16 @@ export async function POST(req) {
       console.warn("⚠️ Concept creation warning (may already exist):", conceptErr.message);
     }
 
-    // Now insert the question version - simplified approach
-    const sql = `
-      INSERT INTO questions (
-        id, stem, choices, correct, subject, system, topic, 
-        status, published, createdAt, updatedAt, packageId, productId, conceptId, isLatest
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `;
-
-    console.log("🧾 SQL READY");
-    const stmt = db.prepare(sql);
-    console.log("🧩 RUNNING INSERT...");
-
-    const result = stmt.run(
-      questionId,
-      stem,
-      JSON.stringify(choices),
-      correct || 'A',
-      subject,
-      system,
-      topic || 'Mixed',
-      status || 'draft',
-      body.published || 0,
-      now,
-      now,
-      effectiveProductId.toString(),
-      effectiveProductId.toString(),
-      effectiveConceptId,
-      1 // isLatest
-    );
+    // Simplified approach: use createQuestion to ensure all fields are mapped correctly
+    const result = createQuestion({
+      ...body,
+      id: questionId,
+      conceptId: effectiveConceptId,
+      createdAt: now,
+      updatedAt: now,
+      productId: effectiveProductId.toString(),
+      packageId: effectiveProductId.toString()
+    });
 
     console.log("🎉 INSERT SUCCESS:", result);
 
@@ -217,7 +197,7 @@ export async function PUT(request) {
     console.log("✅ VALIDATION OK");
     console.log("💾 Calling updateQuestion...");
     
-    const updated = updateQuestion(body);
+    const updated = updateQuestion(body.id, body);
     
     console.log("🎉 UPDATE SUCCESS:", body.id);
     return NextResponse.json({ success: true, ...updated });

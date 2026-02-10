@@ -611,41 +611,17 @@ export default function ManageQuestionsPage() {
                       </td>
                       <td className="px-6 py-5 whitespace-nowrap text-right">
                         <div className="flex items-center justify-end gap-2">
-                          {q.status === 'draft' && (
-                            <>
-                              <button onClick={() => router.push(`/author/create-question?id=${q.id}`)} className="p-1 px-3 bg-blue-100 text-blue-600 rounded text-[10px] font-bold hover:bg-blue-200 transition-colors uppercase">
-                                Edit
-                              </button>
-                              <button onClick={() => handleSubmit(q.id)} className="p-1 px-3 bg-indigo-600 text-white rounded text-[10px] font-bold hover:bg-indigo-700 transition-colors uppercase">
-                                Submit
-                              </button>
-                            </>
-                          )}
-                          
-                          {q.status === 'review' && (
-                            <button onClick={() => handleApprove(q.id)} className="p-1 px-3 bg-indigo-600 text-white rounded text-[10px] font-bold hover:bg-indigo-700 transition-colors uppercase">
-                              Approve
-                            </button>
-                          )}
-
-                          {q.status === 'approved' && (
-                            <button onClick={() => handlePublish(q.id)} className="p-1 px-3 bg-emerald-600 text-white rounded text-[10px] font-bold hover:bg-emerald-700 transition-colors uppercase">
-                              Publish
-                            </button>
-                          )}
-
-                          {q.status === 'published' && (
-                            <div className="flex gap-2">
-                              <button onClick={() => handleRevise(q.id)} className="p-1 px-3 bg-indigo-100 text-indigo-600 rounded text-[10px] font-bold hover:bg-indigo-200 transition-colors uppercase">
-                                Revise
-                              </button>
-                              <button onClick={() => handleDeprecate(q.id)} className="p-1 px-3 bg-red-100 text-red-600 rounded text-[10px] font-bold hover:bg-red-200 transition-colors uppercase">
-                                Deprecate
-                              </button>
-                            </div>
-                          )}
-                          <button onClick={() => setPreviewQuestion(q)} className="p-2 text-slate-400 hover:text-[#0066CC] transition-colors">
-                            <ArrowUpDown size={14} className="rotate-90" />
+                          <button
+                            onClick={() => router.push(`/author/create-question?id=${q.id}`)}
+                            className="p-1 px-3 bg-blue-100 text-blue-600 rounded text-[10px] font-bold hover:bg-blue-200 transition-colors uppercase"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => setPreviewQuestion(q)}
+                            className="p-1 px-3 bg-slate-100 text-slate-600 rounded text-[10px] font-bold hover:bg-slate-200 transition-colors uppercase"
+                          >
+                            View
                           </button>
                         </div>
                       </td>

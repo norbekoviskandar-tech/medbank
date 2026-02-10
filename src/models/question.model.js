@@ -4,7 +4,17 @@ export default class Question {
     this.id = data.id;
     this.stem = data.stem;
     this.stemImage = data.stemImage || data.image || { data: "", size: "default", fileName: "" };
-    this.choices = data.choices || [];
+    // Ensure choices is always an array
+    if (typeof data.choices === 'string') {
+      try {
+        this.choices = JSON.parse(data.choices);
+      } catch (e) {
+        console.error("Failed to parse choices string:", e);
+        this.choices = [];
+      }
+    } else {
+      this.choices = Array.isArray(data.choices) ? data.choices : [];
+    }
     this.correct = data.correct;
     this.subject = data.subject;
     this.system = data.system;
