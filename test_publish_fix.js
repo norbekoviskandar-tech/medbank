@@ -1,6 +1,11 @@
-const { publishQuestion, getDb } = require('./src/lib/server-db');
+const path = require('path');
+const { pathToFileURL } = require('url');
 
-async function testPublish() {
+(async () => {
+  const serverDbUrl = pathToFileURL(path.join(__dirname, 'src', 'lib', 'server-db.js')).href;
+  const dbModule = await import(serverDbUrl);
+  const { publishQuestion, getDb } = dbModule;
+
   const db = getDb();
   db.pragma('foreign_keys = OFF'); // Bypass FK for verification of NOT NULL fix
 
@@ -29,6 +34,5 @@ async function testPublish() {
   } finally {
     db.pragma('foreign_keys = ON');
   }
-}
 
-testPublish();
+})().catch(err => { console.error(err); process.exit(1); });

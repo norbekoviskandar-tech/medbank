@@ -1,7 +1,13 @@
-const { saveTest, saveStudentAnswer, getUserProductStats, getGlobalStats, getDb } = require('./src/lib/server-db');
 const fs = require('fs');
+const path = require('path');
+const { pathToFileURL } = require('url');
 
-async function verify() {
+(async () => {
+  const projectRoot = path.join(__dirname);
+  const serverDbUrl = pathToFileURL(path.join(projectRoot, 'src', 'lib', 'server-db.js')).href;
+  const dbModule = await import(serverDbUrl);
+  const { saveTest, saveStudentAnswer, getUserProductStats, getGlobalStats, getDb } = dbModule;
+
   const db = getDb();
   
   const userId = '3c3afa94-b4e1-4a47-b725-baab1ecfc184';
@@ -64,6 +70,5 @@ async function verify() {
     fs.writeFileSync('verify_error.txt', e.message + '\n' + e.stack);
     process.exit(1);
   }
-}
 
-verify();
+})().catch(err => { console.error(err); process.exit(1); });

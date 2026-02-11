@@ -1,10 +1,15 @@
-const { fetchResultsByProduct } = require('./src/lib/server-db');
+const path = require('path');
+const { pathToFileURL } = require('url');
 
-const studentId = '3c3afa94-b4e1-4a47-b725-baab1ecfc184';
-const productAId = '17';
-const productBId = '19';
+(async () => {
+  const serverDbUrl = pathToFileURL(path.join(__dirname, 'src', 'lib', 'server-db.js')).href;
+  const dbModule = await import(serverDbUrl);
+  const { fetchResultsByProduct } = dbModule;
 
-async function finalVerify() {
+  const studentId = '3c3afa94-b4e1-4a47-b725-baab1ecfc184';
+  const productAId = '17';
+  const productBId = '19';
+
   console.log('--- Final Product Isolation Verification ---');
   
   const resultsA = fetchResultsByProduct(studentId, productAId);
@@ -32,6 +37,5 @@ async function finalVerify() {
   } else {
     console.log('\n❌ VERIFICATION FAILED: Missing data or mixed results.');
   }
-}
 
-finalVerify();
+})().catch(err => { console.error(err); process.exit(1); });

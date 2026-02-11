@@ -118,6 +118,8 @@ export default function TakeTestPage() {
   // Load test configuration
   useEffect(() => {
     const testData = JSON.parse(localStorage.getItem("medbank_current_test"));
+    
+    // Redirect if no test data found
     if (!testData || !testData.questions) {
       router.push("/student/qbank/create-test");
       return;
@@ -126,188 +128,61 @@ export default function TakeTestPage() {
     const testMode = testData.mode || "tutor";
     setMode(testMode);
     setIsReviewMode(!!testData.isReview);
-    // NEW: Capture attempt ID
-    setTestAttemptId(testData.testAttemptId);
-    
-    // Load saved state from localStorage for resume
-    const savedState = loadSavedState();
     
     async function fetchQuestions() {
-      const effectivePackageId = String(testData.packageId || localStorage.getItem("medbank_selected_package"));
-      console.log(`[Exam Runtime] Fetching questions for product: ${effectivePackageId}`);
-
-      let ordered = null;
-      let selectedIds = null;
-      let sourceAnswers = null;
-      let usingAttemptSnapshot = false;
-
-      if (!testData.isReview && !testData.testAttemptId) {
-        try {
-          const toSave = {
-            ...testData,
-            testId: String(testData.testId || ''),
-            userId: testData.userId || localStorage.getItem("medbank_user"),
-            packageId: testData.packageId || localStorage.getItem("medbank_selected_package") || "14",
-            packageName: testData.packageName || localStorage.getItem("medbank_selected_package_name") || null,
-            isSuspended: false
-          };
-
-          const saved = await saveTest(toSave);
-          const attemptId = saved?.testAttemptId || saved?.latestAttemptId || null;
-          if (attemptId) {
-            setTestAttemptId(attemptId);
-            localStorage.setItem(
-              "medbank_current_test",
-              JSON.stringify({
-                ...testData,
-                ...(saved || {}),
-                testAttemptId: attemptId
-              })
-            );
-          }
-        } catch (e) {
-          console.error('[Exam Runtime] Failed to ensure testAttemptId:', e);
-        }
-      }
+      const effectivePackageId = testData.packageId || localStorage.getItem("medbank_selected_package");
+      const all = await getAllQuestions(effectivePackageId);
       
-      // Attempt is the single source of truth: load question snapshots + answers from attempt when possible
-      const attemptId = testData.testAttemptId || JSON.parse(localStorage.getItem('medbank_current_test') || '{}')?.testAttemptId || null;
-      if (attemptId) {
-        try {
-          const attempt = await getTestById(attemptId, effectivePackageId);
-          if (attempt && Array.isArray(attempt.questions) && attempt.questions.length > 0) {
-            ordered = attempt.questions;
-            selectedIds = ordered.map(q => String(q.id)).filter(Boolean);
-            sourceAnswers = attempt.answers || {};
-            usingAttemptSnapshot = true;
-
-            setQuestions(ordered);
-            setQuestions(ordered);
-            setAnswers(sourceAnswers);
-
-            // Hydrate Durations
-            if (Array.isArray(attempt.attemptAnswers)) {
-              const durMap = {};
-              attempt.attemptAnswers.forEach(a => {
-                if (a.questionId) durMap[a.questionId] = a.timeSpentSec || 0;
-              });
-              setQuestionDurations(durMap);
-            }
-            if (typeof attempt.elapsedTime === 'number') {
-              setGlobalTime(attempt.elapsedTime);
-            }
-
-            // Restore lock state
-            if (testData.isReview) {
-              setLockedAnswers(sourceAnswers);
-            } else if ((testMode || '').toLowerCase() === 'tutor') {
-              setLockedAnswers(testData.lockedAnswers || {});
-            } else if (testData.resumeData?.isOmittedResume && !testData.resumeData?.isSuspended) {
-              setLockedAnswers(sourceAnswers);
-            } else {
-              setLockedAnswers({});
-            }
-
-
-          }
-        } catch (e) {
-          console.error('[Exam Runtime] Failed to load attempt snapshot; falling back to product universe', e);
-        }
-      }
-
-      if (!usingAttemptSnapshot) {
-        const all = await getAllQuestions(effectivePackageId);
-        const rawIds = testData.questions || [];
-        selectedIds = rawIds.map(id => {
-          if (typeof id === 'object' && id !== null) return String(id.id);
-          return String(id);
-        });
-        
-        console.log(`[Exam Runtime] Questions to load:`, selectedIds);
-        
-        const selected = all.filter(q => selectedIds.includes(String(q.id)));
-        ordered = selectedIds.map(id => selected.find(q => String(q.id) === id)).filter(Boolean);
-        sourceAnswers = testData.answers || testData.resumeData?.answers || {};
-
-        if (ordered.length === 0 && selectedIds.length > 0) {
-          console.error(`[Exam Runtime] CRITICAL: No questions found from universe match selected IDs. IDs requested:`, selectedIds);
-        }
-
-        setQuestions(ordered);
-      }
+      // Reconstruct the question order
+      const rawIds = testData.questions || [];
+      const selectedIds = rawIds.map(id => (typeof id === 'object' && id !== null) ? String(id.id) : String(id));
+      const selected = all.filter(q => selectedIds.includes(String(q.id)));
+      const ordered = selectedIds.map(id => selected.find(q => String(q.id) === id)).filter(Boolean);
       
-      // Handle Resumption, Review, or Persistence from Refresh
-      const savedFirstAnswers = testData.firstAnswers || testData.resumeData?.firstAnswers || {};
-      setFirstAnswers(savedFirstAnswers);
-      const savedIndex = testData.currentIndex ?? testData.resumeData?.currentIndex ?? 0;
-      const savedMarked = testData.markedIds ?? testData.resumeData?.markedIds ?? savedState.markedIds ?? [];
+      setQuestions(ordered);
 
-      if (!usingAttemptSnapshot) {
-        setAnswers({ ...sourceAnswers, ...savedState.answers });
-      }
+      // --- RESTORE STATE ---
+      const sourceAnswers = testData.answers || {};
+      setAnswers(sourceAnswers);
+      setGlobalTime(testData.elapsedTime || 0);
+      setQuestionDurations(testData.questionDurations || {});
+      setMarkedQuestions(new Set(testData.markedIds || []));
+      setFirstAnswers(testData.firstAnswers || {});
 
-      // Lock answers based on mode and session state
-      const isActuallyTimed = (testData.mode || "").toLowerCase() === 'timed';
-      const isActuallyTutor = (testData.mode || "").toLowerCase() === 'tutor';
+      // --- CRITICAL FIX: EXACT INDEX RESTORATION ---
+      // We strictly use the saved index. We DO NOT check for omitted questions.
+      const savedIndex = testData.currentIndex || 0;
+      setCurrentIndex(savedIndex);
 
+      // --- RESTORE LOCKS (Fixes Ghost/Auto-Submit) ---
       if (testData.isReview) {
         setLockedAnswers(sourceAnswers);
-      } else if (isActuallyTutor) {
+        setIsSubmitted(true);
+      } else if (testMode === "tutor") {
+        // Only lock what was explicitly submitted before
         setLockedAnswers(testData.lockedAnswers || {});
-      } else if (testData.resumeData?.isOmittedResume && !testData.resumeData?.isSuspended) {
-        // Resuming omitted questions from a FINISHED test - lock already answered ones
-        setLockedAnswers(sourceAnswers);
       } else {
+        // Test Mode: Start fresh/unlocked on refresh
         setLockedAnswers({});
+        setIsSubmitted(false);
       }
 
-      // Handle Landing Index
-      let targetIndex = savedIndex;
-      if (testData.resumeData?.isOmittedResume) {
-        const firstOmittedIdx = ordered.findIndex(qObj => !sourceAnswers[qObj.id]);
-        if (firstOmittedIdx !== -1) {
-          targetIndex = firstOmittedIdx;
-        }
-      }
-
-      setCurrentIndex(savedState.currentIndex || targetIndex);
-      setMarkedQuestions(new Set(savedMarked));
-
-      // Safety Check: Ensure this test belongs to the current user
-      const currentUser = localStorage.getItem("medbank_user");
-      if (testData.userId && testData.userId !== currentUser) {
-        localStorage.removeItem("medbank_current_test");
-        router.push("/student/qbank/create-test");
-        return;
-      }
-
-      // Ensure test has unique ID early and it persists
-      const persistentId = String(testData.testId || testData.resumeData?.originalTestId || Date.now());
-      setSessionTestId(persistentId);
-
-      if (String(testData.testId) !== persistentId || !testData.userId) {
-        testData.testId = persistentId;
-        testData.userId = currentUser;
-        localStorage.setItem("medbank_current_test", JSON.stringify(testData));
-      }
-
-      const activeQuestion = ordered[targetIndex];
+      // --- SET ACTIVE SELECTION ---
+      const activeQuestion = ordered[savedIndex];
       if (activeQuestion) {
         const currentAnswer = sourceAnswers[activeQuestion.id];
-        if (testData.isReview || (isActuallyTutor && currentAnswer)) {
-          setSelectedAnswer(currentAnswer);
+        setSelectedAnswer(currentAnswer || null);
+        
+        // Determine if the current question should look "Submitted"
+        if (testData.isReview) {
           setIsSubmitted(true);
-        } else if (currentAnswer) {
-          setSelectedAnswer(currentAnswer);
-          setIsSubmitted(false);
+        } else if (testMode === "tutor") {
+          // In tutor mode, look at the lockedAnswers to decide if we show the explanation
+          const isLocked = testData.lockedAnswers?.[activeQuestion.id];
+          setIsSubmitted(!!isLocked);
         } else {
-          setSelectedAnswer(null);
           setIsSubmitted(false);
         }
-      }
-
-      if (testData.resumeData?.originalTestId) {
-        setOriginalTestId(testData.resumeData.originalTestId);
       }
     }
     fetchQuestions();
@@ -324,16 +199,20 @@ export default function TakeTestPage() {
     const activeTestId = sessionTestId || String(currentTestData.testId || currentTestData.resumeData?.originalTestId || "");
     if (!activeTestId) return; // Prevent sync if ID isn't ready
 
-    // Only persist non-answer UI/session fields here.
-    // Answer + flag writes must be persisted together with DB writes (see syncQuestionProgress/toggleMark).
+    // FIX: Persist all important state fields so they can be restored on refresh
     const updatedTestData = {
       ...currentTestData,
       testId: activeTestId,
-      currentIndex,
-      firstAnswers
+      answers,           // Ensure answers are saved
+      currentIndex,     // Ensure position is saved
+      lockedAnswers,    // Ensure Tutor submissions are remembered
+      markedIds: Array.from(markedQuestions), // Ensure marks are saved
+      firstAnswers,
+      questionDurations,
+      elapsedTime: globalTime // Ensure timer state is saved
     };
     localStorage.setItem("medbank_current_test", JSON.stringify(updatedTestData));
-  }, [currentIndex, questions.length, isReviewMode, firstAnswers, isEnding]);
+  }, [answers, currentIndex, lockedAnswers, markedQuestions, firstAnswers, questionDurations, globalTime, questions.length, isReviewMode, isEnding, sessionTestId]);
 
   // Real-time synchronization helper - NOW ATTEMPT SCOPED
   const ensureAttemptId = async () => {
@@ -565,19 +444,28 @@ export default function TakeTestPage() {
   };
 
   const handleNext = () => {
-    // Auto-save time before moving (always sync time even if submitted)
-    // Auto-save time before moving
-    if (!isReviewMode) {
-      syncTimeWithDB(questions[currentIndex]?.id, answers[questions[currentIndex]?.id]);
-    }
-
     if (currentIndex < totalQuestions - 1) {
       const nextIdx = currentIndex + 1;
+      
+      // 1. Update UI State
       setCurrentIndex(nextIdx);
+
+      // 2. FORCE SAVE to LocalStorage immediately (Fixes the "Back to Q1" bug)
+      try {
+        const currentData = JSON.parse(localStorage.getItem("medbank_current_test") || "{}");
+        localStorage.setItem("medbank_current_test", JSON.stringify({
+          ...currentData,
+          currentIndex: nextIdx
+        }));
+      } catch (e) {
+        console.error("Save failed", e);
+      }
+
+      // 3. Update Selection for the new question
       const previousAnswer = answers[questions[nextIdx]?.id] || null;
       setSelectedAnswer(previousAnswer);
-      const nextQId = questions[nextIdx]?.id;
-      setIsSubmitted(isReviewMode || ((mode === 'tutor') && !!lockedAnswers[nextQId]));
+      setIsSubmitted(isReviewMode || (mode === "tutor" && !!previousAnswer));
+
     } else if (!isReviewMode) {
       handleEndBlock();
     }
@@ -585,7 +473,6 @@ export default function TakeTestPage() {
 
   const handlePrevious = () => {
     // Auto-save time before moving (always sync time)
-    // Auto-save time before moving
     if (!isReviewMode) {
       syncTimeWithDB(questions[currentIndex]?.id, answers[questions[currentIndex]?.id]);
     }
@@ -593,6 +480,14 @@ export default function TakeTestPage() {
     if (currentIndex > 0) {
       const prevIdx = currentIndex - 1;
       setCurrentIndex(prevIdx);
+
+      // Force a save of the index immediately
+      const currentTestData = JSON.parse(localStorage.getItem("medbank_current_test") || "{}");
+      localStorage.setItem("medbank_current_test", JSON.stringify({
+        ...currentTestData,
+        currentIndex: prevIdx
+      }));
+
       const previousAnswer = answers[questions[prevIdx]?.id] || null;
       setSelectedAnswer(previousAnswer);
       const prevQId = questions[prevIdx]?.id;
@@ -967,8 +862,8 @@ export default function TakeTestPage() {
             const hasAnswer = !!userAnswer;
             const isMarked = markedQuestions.has(qId);
 
-            // Show correctness in Review mode or Tutor mode after answering
-            const showResult = isReviewMode || (mode === "tutor" && hasAnswer);
+            // FIX: Only show correctness if it's review mode or if it's tutor mode AND specifically locked
+            const showResult = isReviewMode || (mode === "tutor" && !!lockedAnswers[qId]);
             const isCorrect = showResult && hasAnswer && userAnswer === qItem.correct;
             const isWrong = showResult && hasAnswer && userAnswer !== qItem.correct;
 
@@ -977,9 +872,17 @@ export default function TakeTestPage() {
                 key={idx}
                 onClick={() => {
                   setCurrentIndex(idx);
+                  
+                  // ADD THIS: Save index to localStorage on sidebar click
+                  const currentTestData = JSON.parse(localStorage.getItem("medbank_current_test") || "{}");
+                  localStorage.setItem("medbank_current_test", JSON.stringify({
+                    ...currentTestData,
+                    currentIndex: idx
+                  }));
+
                   const previousAnswer = answers[questions[idx]?.id] || null;
                   setSelectedAnswer(previousAnswer);
-                  setIsSubmitted(isReviewMode || !!previousAnswer);
+                  setIsSubmitted(isReviewMode || ((mode === 'tutor') && !!lockedAnswers[questions[idx]?.id]));
                 }}
                 className={`w-full py-4 flex flex-col items-center justify-center transition-all border-l-4 relative ${isCurrent
                   ? 'bg-blue-400/10 border-amber-400'
@@ -1113,14 +1016,14 @@ export default function TakeTestPage() {
             </div>
 
             {/* Submit / Action Button */}
-            {!isReviewMode && (
+            {!isReviewMode && !(mode === "tutor" && isSubmitted) && (
               <div className="pt-2">
                 <button 
                   onClick={handleSubmit}
-                    disabled={(mode === "tutor" && isSubmitted) && !selectedAnswer}
+                  disabled={!selectedAnswer}
                   className="w-full sm:w-auto bg-[#0072bc] hover:bg-[#005a96] text-white px-12 py-3 rounded shadow-lg font-bold text-[13px] uppercase tracking-wider transition-all active:scale-95 disabled:opacity-30 disabled:hover:bg-[#0072bc]"
                 >
-                    {mode === "tutor" && !isSubmitted ? "Submit" : "Next"}
+                  {mode === "tutor" ? "Submit" : "Next"}
                 </button>
               </div>
             )}

@@ -1679,11 +1679,26 @@ export function updateAttemptAnswer(attemptId, questionId, selectedOption, secon
   const correctOption = correct?.correctOption || null;
   const isCorrectVal = selected === null || !correctOption ? null : (selected === correctOption ? 1 : 0);
 
-  return db.prepare(`
-    UPDATE test_answers 
-    SET selectedOption = ?, isCorrect = ?, timeSpentSec = timeSpentSec + ?
-    WHERE testAttemptId = ? AND questionId = ?
-  `).run(selected, isCorrectVal, secondsToAdd || 0, attemptId, questionId);
+  // Use a transaction to atomically update both tables
+  const runTransaction = db.transaction(() => {
+    // Increment specific question time using COALESCE to handle initial null values
+    db.prepare(`
+      UPDATE test_answers 
+      SET selectedOption = ?, 
+          isCorrect = ?,
+          timeSpentSec = COALESCE(timeSpentSec, 0) + ? 
+      WHERE testAttemptId = ? AND questionId = ?
+    `).run(selected, isCorrectVal, secondsToAdd, attemptId, questionId);
+
+    // Increment global session time (Crucial for refresh persistence)
+    db.prepare(`
+      UPDATE test_attempts 
+      SET elapsedTime = COALESCE(elapsedTime, 0) + ? 
+      WHERE id = ?
+    `).run(secondsToAdd, attemptId);
+  });
+
+  return runTransaction();
 }
 
 export function getPerformanceStats(userId, productId) {
