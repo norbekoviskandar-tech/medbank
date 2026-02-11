@@ -98,7 +98,8 @@ export default function CreateTestTemplateB({ questions, userId, productConfig }
   const subjectCounts = useMemo(() => {
     const counts = {};
     subjectOptions.forEach(s => { counts[s] = 0; });
-    const modeFiltered = (activeFilters.length === 0) ? [] : getFilteredQuestions;
+    // Fix: Default to all questions if no filter is active so user sees counts
+    const modeFiltered = (activeFilters.length === 0) ? questions : getFilteredQuestions;
     modeFiltered.forEach(q => {
       if (q.subject && counts.hasOwnProperty(q.subject)) {
         counts[q.subject] = (counts[q.subject] || 0) + 1;

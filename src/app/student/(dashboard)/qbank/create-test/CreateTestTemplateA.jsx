@@ -94,7 +94,8 @@ export default function CreateTestTemplateA({ questions, userId }) {
   const subjectCounts = useMemo(() => {
     const counts = {};
     subjectOptions.forEach(s => { counts[s] = 0; });
-    const modeFiltered = (activeFilters.length === 0) ? [] : getFilteredQuestions;
+    // Fix: Default to all questions if no filter is active so user sees counts
+    const modeFiltered = (activeFilters.length === 0) ? questions : getFilteredQuestions;
     modeFiltered.forEach(q => {
       if (!q.subject) return;
       counts[q.subject] = (counts[q.subject] || 0) + 1;
@@ -105,8 +106,10 @@ export default function CreateTestTemplateA({ questions, userId }) {
   const systemCounts = useMemo(() => {
     const counts = {};
     systemOptions.forEach(s => { counts[s] = 0; });
-    if (activeFilters.length === 0 || selectedSubjects.length === 0) return counts;
-    const subjectFiltered = getFilteredQuestions.filter(q => selectedSubjects.includes(q.subject));
+    // Fix: Allow calculation if selectedSubjects or activeFilters is empty (by defaulting to all)
+    const baseList = (activeFilters.length === 0) ? questions : getFilteredQuestions;
+    const subjectFiltered = selectedSubjects.length === 0 ? baseList : baseList.filter(q => selectedSubjects.includes(q.subject));
+
     subjectFiltered.forEach(q => {
       if (!q.system) return;
       counts[q.system] = (counts[q.system] || 0) + 1;

@@ -41,19 +41,6 @@ function hashPassword(password) {
   return crypto.createHash('sha256').update(password).digest('hex');
 }
 
-// Global safe JSON parser for DB fields
-const safeParse = (str, fallback) => {
-  if (!str) return fallback;
-  try {
-    let parsed = JSON.parse(str);
-    // Handle double-stringified JSON which sometimes happens in SQLite with JSON columns
-    if (typeof parsed === 'string') parsed = JSON.parse(parsed);
-    return parsed;
-  } catch (e) {
-    return fallback;
-  }
-};
-
 function seedDemoUsers() {
   const db = getDb();
   const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
@@ -183,36 +170,6 @@ function initializeSchema() {
       totalMarks INTEGER DEFAULT 0
     )
   `);
-
-  // Migrate questions table for existing databases
-  const questionColumnsToAdd = [
-    { name: 'explanationCorrect', type: 'TEXT' },
-    { name: 'explanationWrong', type: 'TEXT' },
-    { name: 'summary', type: 'TEXT' },
-    { name: 'explanationCorrectImage', type: "TEXT DEFAULT '{}'" },
-    { name: 'explanationWrongImage', type: "TEXT DEFAULT '{}'" },
-    { name: 'summaryImage', type: "TEXT DEFAULT '{}'" },
-    { name: 'stemImageMode', type: "TEXT DEFAULT 'auto'" },
-    { name: 'explanationImageMode', type: "TEXT DEFAULT 'auto'" },
-    { name: 'difficulty', type: "TEXT DEFAULT 'medium'" },
-    { name: 'cognitiveLevel', type: "TEXT DEFAULT 'understanding'" },
-    { name: 'type', type: "TEXT DEFAULT 'multiple-choice'" },
-    { name: 'versionNumber', type: 'INTEGER DEFAULT 1' },
-    { name: 'isLatest', type: 'INTEGER DEFAULT 1' },
-    { name: 'conceptId', type: 'TEXT' },
-    { name: 'status', type: "TEXT DEFAULT 'published'" }
-  ];
-  const existingQuestionCols = database.prepare("PRAGMA table_info(questions)").all().map(c => c.name);
-  for (const col of questionColumnsToAdd) {
-    if (!existingQuestionCols.includes(col.name)) {
-      try {
-        database.exec(`ALTER TABLE questions ADD COLUMN ${col.name} ${col.type}`);
-        console.log(`Added column ${col.name} to questions table`);
-      } catch (err) {
-        console.warn(`Could not add column ${col.name} to questions:`, err.message);
-      }
-    }
-  }
 
   // NEW: Question Concepts Table (The eternal learning objective)
   database.exec(`
@@ -764,8 +721,7 @@ function initializeSchema() {
     { name: 'markedIds', type: 'TEXT' },
     { name: 'timeSpent', type: 'TEXT' },
     { name: 'elapsedTime', type: 'INTEGER DEFAULT 0' },
-    { name: 'questionSnapshots', type: 'TEXT' },
-    { name: 'review_metadata', type: "TEXT DEFAULT '{}'" }
+    { name: 'questionSnapshots', type: 'TEXT' }
   ];
   for (const col of taColsToAdd) {
     if (!taCols.includes(col.name)) {
@@ -796,13 +752,6 @@ function initializeSchema() {
       database.exec('ALTER TABLE test_answers ADD COLUMN correctOption TEXT');
     } catch (e) {
       console.warn('Migration: Could not add correctOption to test_answers:', e.message);
-    }
-  }
-  if (!ansCols.includes('timeSpentSec')) {
-    try {
-      database.exec('ALTER TABLE test_answers ADD COLUMN timeSpentSec INTEGER DEFAULT 0');
-    } catch (e) {
-      console.warn('Migration: Could not add timeSpentSec to test_answers:', e.message);
     }
   }
   if (!ansCols.includes('timeSpentSec')) {
@@ -1174,91 +1123,44 @@ export function extendSubscription(subscriptionId, additionalDays) {
 export function getUserQuestions(userId, productId) {
   const db = getDb();
   
-  if (!productId || productId === 'null' || productId === 'undefined') {
-    console.warn('getUserQuestions called without valid productId');
-    return [];
-  }
+  // DIAGNOSIS: We use a LEFT JOIN so questions show up even if user_questions is empty.
+  // We use CAST to ensure the productId '8054' matches the database type.
+  const query = `
+    SELECT 
+      q.*, 
+      uq.status as userStatus, 
+      uq.isMarked, 
+      uq.userAnswer,
+      uq.totalAttempts
+    FROM questions q
+    LEFT JOIN user_questions uq ON q.id = uq.questionId 
+      AND uq.userId = ? 
+      AND (CAST(uq.productId AS TEXT) = CAST(? AS TEXT) OR CAST(uq.packageId AS TEXT) = CAST(? AS TEXT))
+    WHERE (CAST(q.productId AS TEXT) = CAST(? AS TEXT) OR CAST(q.packageId AS TEXT) = CAST(? AS TEXT))
+    AND (q.status = 'published' OR q.published = 1)
+  `;
 
   try {
-    const pidStr = productId.toString();
-    const pidInt = parseInt(productId);
+    const questions = db.prepare(query).all(userId, productId, productId, productId, productId);
 
-    // Attempt is the single source of truth: derive status from latest FINISHED attempt only
-    const latestPerQuestion = db.prepare(`
-      SELECT questionId, selectedOption, isCorrect, isFlagged
-      FROM (
-        SELECT 
-          a.questionId as questionId,
-          a.selectedOption as selectedOption,
-          a.isCorrect as isCorrect,
-          a.isFlagged as isFlagged,
-          ta.finishedAt as finishedAt,
-          ROW_NUMBER() OVER (PARTITION BY a.questionId ORDER BY ta.finishedAt DESC) as rn
-        FROM test_attempts ta
-        JOIN test_answers a ON a.testAttemptId = ta.id
-        WHERE ta.userId = ? AND ta.productId = ? AND ta.finishedAt IS NOT NULL
-      )
-      WHERE rn = 1
-    `).all(String(userId), pidStr);
-
-    const latestMap = new Map(latestPerQuestion.map(r => [String(r.questionId), r]));
-
-    // Product-specific question pool: Strictly published and latest only for students
-    const allQuestions = db.prepare(`
-      SELECT * FROM questions 
-      WHERE status = 'published' 
-      AND isLatest = 1 
-      AND (productId = ? OR packageId = ?)
-    `).all(pidStr, pidStr);
-
-    return allQuestions.map(q => {
-      const latest = latestMap.get(String(q.id));
-
-      // UNUSED = never appeared in any finished attempt
-      let computedStatus = 'unused';
-      let userAnswer = null;
-      let isMarked = false;
-
-      if (latest) {
-        userAnswer = latest.selectedOption ?? null;
-        isMarked = !!latest.isFlagged;
-
-        // Correct/Incorrect/Omitted are computed per attempt snapshot
-        if (userAnswer === null || userAnswer === undefined || userAnswer === '') {
-          // Only mark as omitted if the question was previously unused
-          const existingUserQuestion = db.prepare(
-            'SELECT status FROM user_questions WHERE userId = ? AND questionId = ? AND (productId = ? OR packageId = ?)'
-          ).get(String(userId), String(q.id), String(productId), String(productId));
-          
-          if (existingUserQuestion && existingUserQuestion.status === 'unused') {
-            computedStatus = 'omitted';
-          } else if (existingUserQuestion) {
-            // Keep the previous status (correct/incorrect) for questions from those pools
-            computedStatus = existingUserQuestion.status;
-          } else {
-            // New question, mark as omitted
-            computedStatus = 'omitted';
-          }
-        } else {
-          computedStatus = Number(latest.isCorrect) === 1 ? 'correct' : 'incorrect';
-        }
-      }
-
-      return {
-        ...q,
-        choices: safeParse(q.choices, []),
-        status: computedStatus,
-        isMarked,
-        userAnswer,
-        userHistory: [],
-        lifecycleStatus: q.status
-      };
-    });
-  } catch (err) {
-    console.error('getUserQuestions error:', err);
+    // Parse JSON strings back into objects and map for frontend
+    return questions.map(q => ({
+      ...q,
+      choices: JSON.parse(q.choices || '[]'),
+      stemImage: JSON.parse(q.stemImage || '{}'),
+      tags: JSON.parse(q.tags || '[]'),
+      status: q.userStatus || 'unused', // MAP user progress to 'status'
+      isMarked: !!q.isMarked,
+      userAnswer: q.userAnswer || null,
+      userHistory: [],
+      lifecycleStatus: q.status
+    }));
+  } catch (error) {
+    console.error('DB Error in getUserQuestions:', error);
     return [];
   }
 }
+
 
 /**
  * NEW: Initialize questions as "used" during test creation
@@ -1384,16 +1286,15 @@ export function getEligiblePool(userId, packageId, filters = {}, limit = null) {
           ROW_NUMBER() OVER (PARTITION BY a.questionId ORDER BY ta.finishedAt DESC) as rn
         FROM test_attempts ta
         JOIN test_answers a ON a.testAttemptId = ta.id
-        WHERE ta.userId = ? AND ta.productId = ? AND ta.finishedAt IS NOT NULL
+        WHERE ta.userId = ? AND CAST(ta.productId AS TEXT) = CAST(? AS TEXT) AND ta.finishedAt IS NOT NULL
       )
       WHERE rn = 1
     )
     SELECT q.id
     FROM questions q
     LEFT JOIN latest l ON l.questionId = q.id
-    WHERE (q.packageId = ? OR q.productId = ?)
-      AND q.status = 'published'
-      AND q.isLatest = 1
+    WHERE (CAST(q.packageId AS TEXT) = CAST(? AS TEXT) OR CAST(q.productId AS TEXT) = CAST(? AS TEXT))
+      AND (q.status = 'published' OR q.published = 1)
   `;
 
   const params = [uidStr, pidStr, pidStr, pidStr];
@@ -1437,7 +1338,8 @@ export function getUniverseSize(packageId) {
     `
     SELECT COUNT(*) as count
     FROM questions
-    WHERE (packageId = ? OR productId = ?) AND status = 'published' AND isLatest = 1
+    WHERE (CAST(packageId AS TEXT) = CAST(? AS TEXT) OR CAST(productId AS TEXT) = CAST(? AS TEXT))
+    AND (status = 'published' OR published = 1)
     `
   ).get(pidStr, pidStr);
   return res ? res.count : 0;
@@ -1638,12 +1540,12 @@ export function saveTest(test) {
           return {
             ...row,
             id: String(row.id),
-            choices: safeParse(row.choices, []),
-            tags: safeParse(row.tags, []),
-            stemImage: safeParse(row.stemImage, {}),
-            explanationCorrectImage: safeParse(row.explanationCorrectImage, {}),
-            explanationWrongImage: safeParse(row.explanationWrongImage, {}),
-            summaryImage: safeParse(row.summaryImage, {}),
+            choices: (() => { try { return JSON.parse(row.choices || '[]'); } catch { return []; } })(),
+            tags: (() => { try { return JSON.parse(row.tags || '[]'); } catch { return []; } })(),
+            stemImage: (() => { try { return JSON.parse(row.stemImage || '{}'); } catch { return {}; } })(),
+            explanationCorrectImage: (() => { try { return JSON.parse(row.explanationCorrectImage || '{}'); } catch { return {}; } })(),
+            explanationWrongImage: (() => { try { return JSON.parse(row.explanationWrongImage || '{}'); } catch { return {}; } })(),
+            summaryImage: (() => { try { return JSON.parse(row.summaryImage || '{}'); } catch { return {}; } })(),
           };
         }).filter(Boolean);
 
@@ -1664,60 +1566,21 @@ export function saveTest(test) {
   return test;
 }
 
-export function updateAttemptAnswer(attemptId, questionId, selectedOption, secondsToAdd = 0) {
+export function updateAttemptAnswer(attemptId, questionId, selectedOption) {
   const db = getDb();
-
-  // Validation: Do not allow answer updates if attempt is finished
-  const attempt = db.prepare('SELECT finishedAt FROM test_attempts WHERE id = ?').get(attemptId);
-  if (attempt?.finishedAt) {
-    console.warn('[DB] Attempting to update answer on finished attempt:', attemptId);
-    return false;
-  }
-
   const selected = (selectedOption === undefined || selectedOption === '') ? null : selectedOption;
   const correct = db.prepare('SELECT correctOption FROM test_answers WHERE testAttemptId = ? AND questionId = ?').get(attemptId, String(questionId));
   const correctOption = correct?.correctOption || null;
   const isCorrectVal = selected === null || !correctOption ? null : (selected === correctOption ? 1 : 0);
-
-  // Use a transaction to atomically update both tables
-  const runTransaction = db.transaction(() => {
-    // Increment specific question time using COALESCE to handle initial null values
-    db.prepare(`
-      UPDATE test_answers 
-      SET selectedOption = ?, 
-          isCorrect = ?,
-          timeSpentSec = COALESCE(timeSpentSec, 0) + ? 
-      WHERE testAttemptId = ? AND questionId = ?
-    `).run(selected, isCorrectVal, secondsToAdd, attemptId, questionId);
-
-    // Increment global session time (Crucial for refresh persistence)
-    db.prepare(`
-      UPDATE test_attempts 
-      SET elapsedTime = COALESCE(elapsedTime, 0) + ? 
-      WHERE id = ?
-    `).run(secondsToAdd, attemptId);
-  });
-
-  return runTransaction();
-}
-
-export function getPerformanceStats(userId, productId) {
-  const db = getDb();
   return db.prepare(`
-    SELECT 
-      SUM(timeSpentSec) as totalTime,
-      AVG(timeSpentSec) as avgTime,
-      SUM(CASE WHEN isCorrect = 1 THEN 1 ELSE 0 END) as correctCount,
-      COUNT(*) as totalAnswered
-    FROM test_answers ta
-    JOIN test_attempts att ON ta.testAttemptId = att.id
-    WHERE att.userId = ? AND att.productId = ?
-  `).get(userId, productId);
+    UPDATE test_answers 
+    SET selectedOption = ?, isCorrect = ?
+    WHERE testAttemptId = ? AND questionId = ?
+  `).run(selected, isCorrectVal, attemptId, questionId);
 }
 
 export function updateAttemptFlag(attemptId, questionId, isFlagged) {
   const db = getDb();
-  // Flag updates ARE allowed even after finish for review purposes
   return db.prepare(`
     UPDATE test_answers 
     SET isFlagged = ?
@@ -1856,15 +1719,6 @@ export function finishAttempt(attemptId) {
   return { success: true, alreadyFinished: false };
 }
 
-export function updateAttemptReviewMetadata(attemptId, meta) {
-  const db = getDb();
-  db.prepare('UPDATE test_attempts SET review_metadata = ? WHERE id = ?').run(
-    JSON.stringify(meta),
-    attemptId
-  );
-  return true;
-}
-
 export function getTestAttempt(attemptId) {
   const db = getDb();
   const attempt = db.prepare('SELECT * FROM test_attempts WHERE id = ?').get(attemptId);
@@ -1887,7 +1741,14 @@ export function getTestAttempt(attemptId) {
   const pidStr = attempt.productId.toString();
   const universe = db.prepare('SELECT COUNT(*) as count FROM questions WHERE (productId = ? OR packageId = ?) AND status = "published" AND isLatest = 1').get(pidStr, pidStr);
 
-
+  const safeParse = (str, fallback) => {
+    if (!str) return fallback;
+    try {
+      let parsed = JSON.parse(str);
+      if (typeof parsed === 'string') parsed = JSON.parse(parsed);
+      return parsed;
+    } catch (e) { return fallback; }
+  };
 
   const questionIds = safeParse(attempt.questionIds, null);
   const questionSnapshots = safeParse(attempt.questionSnapshots, null);
@@ -2353,7 +2214,12 @@ export function getUserProductStats(userId, packageId) {
   const pidInt = parseInt(packageId);
 
   // 1. Get total published questions for this product
-  const productUniverse = db.prepare('SELECT COUNT(*) as count FROM questions WHERE (productId = ? OR packageId = ?) AND status = "published" AND isLatest = 1').get(pidStr, pidStr).count;
+  const productUniverse = db.prepare(`
+    SELECT COUNT(*) as count 
+    FROM questions 
+    WHERE (CAST(productId AS TEXT) = CAST(? AS TEXT) OR CAST(packageId AS TEXT) = CAST(? AS TEXT)) 
+    AND (status = 'published' OR published = 1)
+  `).get(pidStr, pidStr).count;
 
   // 2. Get user progress for this product
   const userProgress = db.prepare(`
@@ -2363,14 +2229,11 @@ export function getUserProductStats(userId, packageId) {
       SUM(CASE WHEN status = 'omitted' THEN 1 ELSE 0 END) as omitted,
       COUNT(DISTINCT questionId) as uniqueUsed
     FROM user_questions 
-    WHERE userId = ? AND (productId = ? OR packageId = ?)
+    WHERE userId = ? AND (CAST(productId AS TEXT) = CAST(? AS TEXT) OR CAST(packageId AS TEXT) = CAST(? AS TEXT))
   `).get(userId, pidStr, pidStr);
 
   // 3. Get completed tests count
   const completedTests = db.prepare('SELECT COUNT(*) as count FROM tests WHERE userId = ? AND (productId = ? OR packageId = ?) AND isSuspended = 0').get(userId, pidStr, pidStr).count;
-
-  // 4. Get performance stats (Time & Validated Accuracy)
-  const perfStats = getPerformanceStats(userId, pidStr);
 
   const attempted = (userProgress.correct || 0) + (userProgress.incorrect || 0);
   const totalAnswered = attempted + (userProgress.omitted || 0);
@@ -2388,10 +2251,7 @@ export function getUserProductStats(userId, packageId) {
     incorrectAnswers: userProgress.incorrect || 0,
     omittedAnswers: userProgress.omitted || 0,
     usedQuestions: userProgress.uniqueUsed || 0,
-    unusedQuestions: Math.max(0, productUniverse - (userProgress.uniqueUsed || 0)),
-    // New Performance Metrics
-    totalTime: perfStats?.totalTime || 0,
-    avgTime: Math.round(perfStats?.avgTime || 0)
+    unusedQuestions: Math.max(0, productUniverse - (userProgress.uniqueUsed || 0))
   };
 }
 
@@ -2637,7 +2497,7 @@ export function getAllQuestions(productId = null, includeUnpublished = false) {
   const params = [];
   
   if (productId) {
-    query += ` WHERE (q.productId = ? OR q.packageId = ?)`;
+    query += ` WHERE (CAST(q.productId AS TEXT) = CAST(? AS TEXT) OR CAST(q.packageId AS TEXT) = CAST(? AS TEXT))`;
     params.push(productId, productId);
   }
   
@@ -2650,13 +2510,13 @@ export function getAllQuestions(productId = null, includeUnpublished = false) {
   const questions = db.prepare(query).all(...params);
   return questions.map(q => ({
     ...q,
-    choices: safeParse(q.choices, []),
-    stemImage: safeParse(q.stemImage, {}),
-    explanationCorrectImage: safeParse(q.explanationCorrectImage, {}),
-    explanationWrongImage: safeParse(q.explanationWrongImage, {}),
-    summaryImage: safeParse(q.summaryImage, {}),
-    tags: safeParse(q.tags, []),
-    choiceDistribution: safeParse(q.choiceDistribution, {}),
+    choices: JSON.parse(q.choices || '[]'),
+    stemImage: JSON.parse(q.stemImage || '{}'),
+    explanationCorrectImage: JSON.parse(q.explanationCorrectImage || '{}'),
+    explanationWrongImage: JSON.parse(q.explanationWrongImage || '{}'),
+    summaryImage: JSON.parse(q.summaryImage || '{}'),
+    tags: JSON.parse(q.tags || '[]'),
+    choiceDistribution: JSON.parse(q.choiceDistribution || '{}'),
     published: !!q.published,
     isLatest: !!q.isLatest
   }));
@@ -2669,13 +2529,13 @@ export function getQuestionById(id) {
   
   return {
     ...q,
-    choices: safeParse(q.choices, []),
-    stemImage: safeParse(q.stemImage, {}),
-    explanationCorrectImage: safeParse(q.explanationCorrectImage, {}),
-    explanationWrongImage: safeParse(q.explanationWrongImage, {}),
-    summaryImage: safeParse(q.summaryImage, {}),
-    tags: safeParse(q.tags, []),
-    choiceDistribution: safeParse(q.choiceDistribution, {}),
+    choices: JSON.parse(q.choices || '[]'),
+    stemImage: JSON.parse(q.stemImage || '{}'),
+    explanationCorrectImage: JSON.parse(q.explanationCorrectImage || '{}'),
+    explanationWrongImage: JSON.parse(q.explanationWrongImage || '{}'),
+    summaryImage: JSON.parse(q.summaryImage || '{}'),
+    tags: JSON.parse(q.tags || '[]'),
+    choiceDistribution: JSON.parse(q.choiceDistribution || '{}'),
     published: !!q.published,
     isLatest: !!q.isLatest
   };
@@ -2737,77 +2597,28 @@ export function createQuestion(question) {
 
 export function updateQuestion(id, updates) {
   const db = getDb();
-
-  // WHITELIST: Only editable question content fields
-  // NEVER update: id, conceptId, packageId, productId, createdAt, versionNumber
-  const EDITABLE_FIELDS = [
-    'stem', 'stemImage', 'stemImageMode',
-    'choices', 'correct',
-    'explanationCorrect', 'explanationCorrectImage',
-    'explanationWrong', 'explanationWrongImage',
-    'summary', 'summaryImage',
-    'explanationImageMode',
-    'system', 'subject', 'topic',
-    'difficulty', 'cognitiveLevel', 'type',
-    'references', 'tags',
-    'status', 'published', 'isLatest',
-    'globalAttempts', 'globalCorrect', 'choiceDistribution',
-    'totalTimeSpent', 'totalVolatility', 'totalStrikes', 'totalMarks'
-  ];
-
   const fields = [];
   const params = [];
-  
-  // First, fetch the existing question to preserve relational fields
-  const existing = getQuestionById(id);
-  if (!existing) {
-    throw new Error(`Question ${id} not found`);
-  }
 
   Object.keys(updates).forEach(key => {
-    // Skip non-editable fields
-    if (!EDITABLE_FIELDS.includes(key)) {
-      console.warn(`updateQuestion: Ignoring non-editable field "${key}"`);
-      return;
-    }
-
-    // Skip null/undefined values to prevent overwriting existing data
-    if (updates[key] === null || updates[key] === undefined) {
-      console.warn(`updateQuestion: Skipping null/undefined value for "${key}"`);
-      return;
-    }
-
-    // JSON fields
+    if (key === 'id') return;
     if (['choices', 'stemImage', 'explanationCorrectImage', 'explanationWrongImage', 'summaryImage', 'tags', 'choiceDistribution'].includes(key)) {
-      fields.push(`"${key}" = ?`);
-      params.push(JSON.stringify(updates[key]));
-    }
-    // Boolean/Integer fields
-    else if (['published', 'isLatest'].includes(key)) {
-      fields.push(`"${key}" = ?`);
+      fields.push(`${key} = ?`);
+      params.push(JSON.stringify(updates[key] || {}));
+    } else if (['published', 'isLatest'].includes(key)) {
+      fields.push(`${key} = ?`);
       params.push(updates[key] ? 1 : 0);
-    }
-    // Regular fields
-    else {
-      fields.push(`"${key}" = ?`);
+    } else {
+      fields.push(`${key} = ?`);
       params.push(updates[key]);
     }
   });
-  
-  // Always update the timestamp
+
   fields.push('updatedAt = ?');
   params.push(new Date().toISOString());
   params.push(id);
-  
-  if (fields.length === 1) {
-    // Only updatedAt would be set, nothing else to update
-    console.warn('updateQuestion: No valid editable fields to update');
-    return existing;
-  }
 
-  console.log(`updateQuestion: Updating question ${id} with fields:`, fields.map(f => f.split(' = ')[0]));
   db.prepare(`UPDATE questions SET ${fields.join(', ')} WHERE id = ?`).run(...params);
-
   return getQuestionById(id);
 }
 
@@ -2869,7 +2680,7 @@ export function approveQuestion(questionId, userId) {
     actorId: userId,
     reason: 'Approved'
   });
-  return updateQuestion(questionId, { status: 'published', isLatest: 1 });
+  return updateQuestion(questionId, { status: 'published' });
 }
 
 export function publishQuestion(questionId, userId) {
@@ -3003,7 +2814,7 @@ export function fetchResultsByProduct(userId, productId) {
   return db.prepare(`
     SELECT *
     FROM student_answers_per_product
-    WHERE studentId = ? AND (productId = ? OR packageId = ?)
+    WHERE studentId = ? AND (CAST(productId AS TEXT) = CAST(? AS TEXT) OR CAST(packageId AS TEXT) = CAST(? AS TEXT))
   `).all(uidStr, pidStr, pidStr);
 }
 
