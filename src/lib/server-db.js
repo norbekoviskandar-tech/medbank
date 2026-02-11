@@ -2869,7 +2869,7 @@ export function approveQuestion(questionId, userId) {
     actorId: userId,
     reason: 'Approved'
   });
-  return updateQuestion(questionId, { status: 'published' });
+  return updateQuestion(questionId, { status: 'published', isLatest: 1 });
 }
 
 export function publishQuestion(questionId, userId) {
