@@ -1,0 +1,183 @@
+"use client";
+
+import React from "react";
+
+export default function MetadataPanel({ editor }) {
+  const {
+    isEditing, lastSaved, questionId, setQuestionId, errors, generateAutoId,
+    system, setSystem, availableSystems, subject, setSubject, availableSubjects,
+    topic, setTopic, correctIndex, setCorrectIndex, tags, setTags,
+    references, setReferences, stemImageMode, setStemImageMode,
+    explanationImageMode, setExplanationImageMode, saveQuestion, resetForm,
+    status, version
+  } = editor;
+
+  return (
+    <div className="bg-[#FDFDFD] text-[#1B263B] p-3 rounded-xl border border-slate-200 shadow-[0_8px_30px_rgba(0,0,0,0.03)] space-y-3 h-fit sticky top-20">
+      <div>
+        <h2 className="text-xl font-heading font-black text-[#1B263B] uppercase tracking-tight flex items-center gap-2">
+          <span className="w-1.5 h-6 bg-[#0066CC] rounded-full" />
+        </h2>
+        <div className="flex items-center gap-2 mt-2">
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest ${
+            status === 'published' ? 'bg-emerald-100 text-emerald-700' : 
+            status === 'draft' ? 'bg-amber-100 text-amber-700' : 
+            status === 'review' ? 'bg-blue-100 text-blue-700' :
+            status === 'approved' ? 'bg-indigo-100 text-indigo-700' :
+            status === 'deprecated' ? 'bg-red-100 text-red-700' :
+            'bg-slate-100 text-slate-600'
+          }`}>
+            {status || 'Draft'} v{version || 1}
+          </span>
+          {lastSaved && (
+            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-tight">
+              Saved: {new Date(lastSaved).toLocaleTimeString()}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <div className="flex-1">
+          <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest block mb-1.5 ml-1">Question ID</label>
+          <input
+            value={questionId}
+            onChange={(e) => setQuestionId(e.target.value.toUpperCase())}
+            placeholder="e.g. CV-HTN-001"
+            className={`bg-white border border-slate-200 px-4 py-3 rounded-2xl w-full text-[#1B263B] focus:ring-4 focus:ring-[#0066CC]/10 focus:border-[#0066CC] outline-none transition-all shadow-sm ${errors.questionId ? "border-red-500" : ""}`}
+            disabled={isEditing}
+          />
+          {errors.questionId && <p className="text-red-600 text-[10px] font-bold mt-1.5 ml-1">{errors.questionId}</p>}
+        </div>
+        {!isEditing && (
+          <button
+            type="button"
+            onClick={generateAutoId}
+            className="mt-6 px-4 py-3 bg-primary text-white rounded-2xl hover:opacity-90 text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-primary/20"
+          >
+            Auto
+          </button>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <div>
+          <label className="text-[10px] font-bold text-slate-500 uppercase block mb-0.5 ml-1">System</label>
+          <select 
+            disabled={status !== 'draft'}
+            value={system} 
+            onChange={(e) => setSystem(e.target.value)} 
+            className={`bg-background text-foreground border border-border p-1.5 w-full rounded-lg focus:ring-2 focus:ring-primary/20 outline-none transition-all hover:bg-panel/30 text-xs ${errors.system ? "border-red-500" : ""}`}
+          >
+            <option value="">Select System</option>
+            {availableSystems.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+          {errors.system && <p className="text-red-600 text-[10px] mt-0.5">{errors.system}</p>}
+        </div>
+
+        <div>
+          <label className="text-[10px] font-bold text-slate-500 uppercase block mb-0.5 ml-1">Subject</label>
+          <select 
+            disabled={status !== 'draft'}
+            value={subject} 
+            onChange={(e) => setSubject(e.target.value)} 
+            className={`bg-background text-foreground border border-border p-1.5 w-full rounded-lg focus:ring-2 focus:ring-primary/20 outline-none transition-all hover:bg-panel/30 text-xs ${errors.subject ? "border-red-500" : ""}`}
+          >
+            <option value="">Select Subject</option>
+            {availableSubjects.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+          {errors.subject && <p className="text-red-600 text-[10px] mt-0.5">{errors.subject}</p>}
+        </div>
+
+        <div>
+          <label className="text-[10px] font-bold text-slate-500 uppercase block mb-0.5 ml-1">Topic</label>
+          <input 
+            disabled={status !== 'draft'}
+            value={topic} 
+            onChange={(e) => setTopic(e.target.value)} 
+            placeholder="Topic" 
+            className="bg-background text-foreground border border-border p-1.5 rounded-lg w-full focus:ring-2 focus:ring-primary/20 outline-none transition-all hover:bg-panel/30 text-xs" 
+          />
+        </div>
+
+        <div>
+          <label className="text-[10px] font-bold text-slate-500 uppercase block mb-0.5 ml-1">Correct Answer</label>
+          <select 
+            disabled={status !== 'draft'}
+            value={correctIndex} 
+            onChange={(e) => setCorrectIndex(parseInt(e.target.value))} 
+            className="bg-background text-foreground border border-border p-1.5 rounded-lg w-full focus:ring-2 focus:ring-primary/20 outline-none transition-all hover:bg-panel/30 text-xs text-center font-bold"
+          >
+            <option value="0">A</option>
+            <option value="1">B</option>
+            <option value="2">C</option>
+            <option value="3">D</option>
+            <option value="4">E</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="mt-2">
+        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5 ml-1">Tags</label>
+        <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="heart, surgery, pediatric" className="bg-background border border-border p-1.5 rounded-lg w-full focus:ring-2 focus:ring-primary/20 outline-none transition-all text-xs" />
+      </div>
+
+      <div className="mt-2">
+        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5 ml-1">References</label>
+        <textarea value={references} onChange={(e) => setReferences(e.target.value)} placeholder="Guidelines, Citations..." className="bg-background border border-border p-1.5 rounded-lg w-full h-14 resize-none focus:ring-2 focus:ring-primary/20 outline-none transition-all text-[10px]" />
+      </div>
+
+      <div className="mt-3 pt-2 border-t border-border/50">
+        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Display Settings</label>
+        <div className="space-y-2">
+          <div>
+            <label className="text-[9px] font-bold text-gray-400 uppercase block">Stem Image</label>
+            <select value={stemImageMode} onChange={(e) => setStemImageMode(e.target.value)} className="bg-background text-foreground border border-border p-1.5 rounded-lg w-full focus:ring-2 focus:ring-primary/20 outline-none transition-all hover:bg-panel/30 text-[10px]">
+              <option value="auto">Show automatically</option>
+              <option value="click">Click word to reveal</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="text-[9px] font-bold text-gray-400 uppercase block">Explanations</label>
+            <select value={explanationImageMode} onChange={(e) => setExplanationImageMode(e.target.value)} className="bg-background text-foreground border border-border p-1.5 rounded-lg w-full focus:ring-2 focus:ring-primary/20 outline-none transition-all hover:bg-panel/30 text-[10px]">
+              <option value="auto">Show automatically</option>
+              <option value="click">Click word to reveal</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2 mt-4">
+                <button 
+          type="button"
+          onClick={() => saveQuestion(true)}
+          className="w-full bg-[#0066CC] text-white p-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-[#0066CC]/20 hover:bg-[#0055AA] transition-all active:scale-95 flex items-center justify-center gap-2"
+                >
+          <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+          {status === 'published' ? 'Update Published' : 'Publish Live'}
+                </button>
+                
+                <button 
+          type="button"
+          onClick={() => saveQuestion(false)}
+          className="w-full bg-white text-[#1B263B] p-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border border-[#1B263B]/10 hover:border-[#1B263B]/30 hover:bg-slate-50 transition-all active:scale-95 shadow-sm"
+                >
+          Save Draft
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            if (confirm("Clear entire form? This cannot be undone.")) {
+              resetForm();
+            }
+          }}
+          className="w-full mt-2 text-red-500 hover:bg-red-50 p-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all"
+        >
+          Reset Workboard
+        </button>
+      </div>
+    </div>
+  );
+}
